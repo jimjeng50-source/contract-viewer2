@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>合約自動審查（單機版）</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --ink: #1f2430; --muted: #6b7280;
+    --line: #e3e6eb; --accent: #2456a6; --accent-ink: #ffffff;
+    --err: #b3261e; --err-bg: #fdeceb; --warn: #8a5a00; --warn-bg: #fff4dc;
+    --info: #205c8c; --info-bg: #e8f2fb; --ok: #1e6f43; --ok-bg: #e7f4ec;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: baseline; justify-content: space-between;
+           flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+  h1 { font-size: 22px; margin: 0; }
+  .stats { font-size: 13px; color: var(--muted); }
+  .note { font-size: 12px; color: var(--muted); margin: 0 0 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 16px; margin-bottom: 16px; }
+  #drop { border: 2px dashed #b9c2cf; border-radius: 10px; padding: 36px 16px;
+          text-align: center; color: var(--muted); cursor: pointer;
+          transition: background .15s, border-color .15s; }
+  #drop.hover { background: var(--info-bg); border-color: var(--accent); color: var(--accent); }
+  #drop strong { color: var(--ink); font-size: 16px; }
+  .controls { display: flex; gap: 12px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  select, input[type=text], button {
+    font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; }
+  button { cursor: pointer; background: var(--card); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .file-card h2 { font-size: 17px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 8px; border-top: 1px solid var(--line);
+           vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; border-top: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px;
+           font-size: 12px; white-space: nowrap; }
+  .badge.error   { background: var(--err-bg);  color: var(--err); }
+  .badge.warning { background: var(--warn-bg); color: var(--warn); }
+  .badge.info    { background: var(--info-bg); color: var(--info); }
+  .snippet { color: var(--muted); font-size: 13px; word-break: break-all; }
+  .loc { white-space: nowrap; }
+  .acts { white-space: nowrap; }
+  .acts button { font-size: 12px; padding: 4px 8px; margin-right: 4px; }
+  .learned { color: var(--ok); font-size: 12px; }
+  .clean { color: var(--ok); background: var(--ok-bg); padding: 10px 12px;
+           border-radius: 8px; display: inline-block; }
+  .error-msg { color: var(--err); }
+  details summary { cursor: pointer; font-weight: 600; }
+  .form-grid { display: grid; grid-template-columns: 140px 1fr; gap: 10px 12px;
+               margin-top: 12px; max-width: 640px; }
+  .form-grid label { padding-top: 8px; color: var(--muted); font-size: 14px; }
+  .hint { grid-column: 2; color: var(--muted); font-size: 12px; margin-top: -6px; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+           background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 8px;
+           font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none;
+           max-width: 90%; }
+  #toast.show { opacity: .95; }
+  #rules-list li { margin: 3px 0; font-size: 13px; }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toolbar button { font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>合約自動審查<span style="font-size:13px;color:var(--muted)">　單機版</span></h1>
+    <div class="stats" id="stats"></div>
+  </header>
+  <p class="note">本檔完全離線運作，合約內容不會離開你的電腦。學習資料與自訂規則存在這個瀏覽器（localStorage），可用下方按鈕匯出備份或帶到別台電腦。規則版本：<span id="build-info">/*__BUILD_INFO__*/</span></p>
+
+  <div class="card">
+    <div id="drop">
+      <strong>把 Word（.docx）或 PDF 合約拖到這裡</strong><br>
+      或點一下選擇檔案（可一次多份）<br>
+      <span style="font-size:12px">訂購單合約／發包承攬契約皆可，預設自動判斷類型</span>
+    </div>
+    <input type="file" id="file-input" accept=".docx,.pdf" multiple hidden>
+    <div class="controls">
+      <label>文件類型
+        <select id="doc-type">
+          <option value="auto" selected>自動判斷</option>
+          <option value="purchase_order">訂購單合約</option>
+          <option value="subcontract">發包承攬契約</option>
+          <option value="common">一般契約（僅共用規則）</option>
+        </select>
+      </label>
+      <span class="stats">審完可對每項結果按「誤報」，系統會記住、之後不再報。</span>
+    </div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="card">
+    <details>
+      <summary>新增審查規則</summary>
+      <div class="form-grid">
+        <label for="r-id">規則 id</label>
+        <input type="text" id="r-id" placeholder="custom-ip">
+        <label for="r-type">型別</label>
+        <select id="r-type">
+          <option value="required">required（必要條款，找不到就報）</option>
+          <option value="forbidden">forbidden（出現就報：錯字／禁用語）</option>
+          <option value="consistency">consistency（用語混用就報）</option>
+        </select>
+        <label for="r-doc">適用文件</label>
+        <select id="r-doc">
+          <option value="common">所有文件</option>
+          <option value="purchase_order">訂購單合約</option>
+          <option value="subcontract">發包承攬契約</option>
+        </select>
+        <label for="r-severity">嚴重度</label>
+        <select id="r-severity">
+          <option value="error">error（錯誤）</option>
+          <option value="warning" selected>warning（警告）</option>
+          <option value="info">info（提示）</option>
+        </select>
+        <label for="r-patterns">關鍵字／regex</label>
+        <input type="text" id="r-patterns" placeholder="智慧財產|智財">
+        <div class="hint">required/forbidden 用；多個 regex 以「;」分隔。consistency 改填用語組：組內用「|」、組間用「;」，例：甲方|乙方;買方|賣方</div>
+        <label for="r-message">說明訊息</label>
+        <input type="text" id="r-message" placeholder="命中時報告顯示的文字（可留空）">
+        <label></label>
+        <button class="primary" id="r-submit">新增規則</button>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <details id="rules-details">
+      <summary>目前規則清單</summary>
+      <ul id="rules-list"></ul>
+    </details>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>學習資料管理</summary>
+      <div class="toolbar" style="margin-top:12px">
+        <button id="export-learning">匯出學習資料（JSON）</button>
+        <button id="import-learning">匯入學習資料</button>
+        <button id="export-rules">匯出自訂規則（YAML，可併回 rules/）</button>
+        <button id="clear-learning">清除全部學習資料</button>
+        <input type="file" id="import-input" accept=".json" hidden>
+      </div>
+      <p class="hint" style="margin-top:10px">匯出的 YAML 可直接放進主程式 repo 的 rules/ 目錄，讓學到的規則變成正式規則。</p>
+    </details>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>/*__JSZIP__*/</script>
+<script>/*__PDFJS__*/</script>
+<script>/*__PDFJS_WORKER__*/</script>
+<script>
+'use strict';
+// ───────────────────────── 內嵌規則（由 build_standalone.py 產生） ─────────────────────────
+const BASE_RULES = /*__RULES_JSON__*/;
+// pdf.js 解 CID 字型（無內嵌 ToUnicode 的中文 PDF）所需的 CMap 表，全部內嵌以離線運作
+const CMAPS = /*__CMAPS_JSON__*/;
+
+// ───────────────────────── 共用工具 ─────────────────────────
+const $ = (sel) => document.querySelector(sel);
+const SEV_LABEL = { error: '錯誤', warning: '警告', info: '提示' };
+const SEV_ORDER = { error: 0, warning: 1, info: 2 };
+const DOC_TYPES = {
+  purchase_order: '訂購單合約',
+  subcontract: '發包承攬契約',
+  common: '一般契約（僅套用共用規則）',
+};
+
+function toast(msg, ms = 3200) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), ms);
+}
+function esc(s) {
+  return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+// ───────────────────────── 學習資料（localStorage） ─────────────────────────
+const store = {
+  get(key, fallback) {
+    try { return JSON.parse(localStorage.getItem('cv2.' + key)) ?? fallback; }
+    catch { return fallback; }
+  },
+  set(key, value) { localStorage.setItem('cv2.' + key, JSON.stringify(value)); },
+};
+function normSnippet(s) { return (s || '').replace(/[\s　]+/g, ''); }
+function signature(ruleId, snippet) { return ruleId + '|' + normSnippet(snippet); }
+
+function getSuppressions() { return store.get('suppressions', []); }
+function getFeedback() { return store.get('feedback', []); }
+function getCustomRules() { return store.get('customRules', []); }
+function getExtensions() { return store.get('patternExtensions', {}); }
+
+function recordFeedback(verdict, finding, fileName, extendPattern) {
+  const log = getFeedback();
+  log.push({
+    time: new Date().toISOString(), verdict, rule_id: finding.rule_id,
+    file: fileName, location: finding.location, snippet: finding.snippet,
+  });
+  store.set('feedback', log);
+  if (verdict !== 'false_positive') return { detail: '已記錄確認回饋。' };
+  if (extendPattern) {
+    try { new RegExp(extendPattern); }
+    catch (e) { throw new Error('補充的 regex 無效：' + e.message); }
+    const ext = getExtensions();
+    (ext[finding.rule_id] ||= []).includes(extendPattern) || ext[finding.rule_id].push(extendPattern);
+    store.set('patternExtensions', ext);
+    return { detail: `已把關鍵字「${extendPattern}」學進規則「${finding.rule_id}」，之後含此寫法的合約不會再誤報。` };
+  }
+  if (!finding.snippet) {
+    return { detail: '已記錄誤報（全文型規則無法以節錄抑制）。' };
+  }
+  const sup = getSuppressions();
+  const sig = signature(finding.rule_id, finding.snippet);
+  if (!sup.some(s => s.signature === sig)) {
+    sup.push({ signature: sig, rule_id: finding.rule_id, snippet: finding.snippet,
+               created: new Date().toISOString() });
+    store.set('suppressions', sup);
+  }
+  return { detail: '已學習此誤報：之後審查遇到相同條文將不再回報。' };
+}
+
+function refreshStats() {
+  $('#stats').textContent =
+    `已學習誤報 ${getSuppressions().length} 條．累計回饋 ${getFeedback().length} 筆` +
+    `．自訂規則 ${getCustomRules().length} 條`;
+}
+
+// ───────────────────────── 文字抽取 ─────────────────────────
+async function extractDocx(file) {
+  const zip = await JSZip.loadAsync(file);
+  const entry = zip.file('word/document.xml');
+  if (!entry) throw new Error('不是有效的 .docx 檔（找不到 word/document.xml）。');
+  const xml = await entry.async('string');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const segments = [];
+  let n = 0;
+  for (const p of doc.getElementsByTagNameNS('*', 'p')) {
+    let text = '';
+    for (const t of p.getElementsByTagNameNS('*', 't')) text += t.textContent;
+    text = text.trim();
+    if (text) segments.push({ text, location: `段落 ${++n}` });
+  }
+  if (!segments.length) throw new Error('檔案中沒有可審查的文字。');
+  return segments;
+}
+
+class EmbeddedCMapReaderFactory {
+  async fetch({ name }) {
+    const b64 = CMAPS[name];
+    if (!b64) throw new Error('未內嵌的 CMap：' + name);
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return { cMapData: arr, compressionType: pdfjsLib.CMapCompressionType.BINARY };
+  }
+}
+
+async function extractPdf(file) {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjsLib.getDocument({
+    data,
+    useWorkerFetch: false,
+    CMapReaderFactory: EmbeddedCMapReaderFactory,
+  }).promise;
+  const segments = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const lines = new Map();
+    for (const item of content.items) {
+      const y = Math.round(item.transform[5]);
+      if (!lines.has(y)) lines.set(y, []);
+      lines.get(y).push(item);
+    }
+    const ys = [...lines.keys()].sort((a, b) => b - a);
+    let ln = 0;
+    for (const y of ys) {
+      const text = lines.get(y)
+        .sort((a, b) => a.transform[4] - b.transform[4])
+        .map(i => i.str).join('').trim();
+      if (text) segments.push({ text, location: `第 ${p} 頁第 ${++ln} 行` });
+    }
+  }
+  if (!segments.length) {
+    throw new Error('無法抽取任何文字，可能是掃描影像 PDF，請先 OCR 成文字型 PDF。');
+  }
+  return segments;
+}
+
+// ───────────────────────── 內建檢查（與 Python 版 checks.py 對應） ─────────────────────────
+const CN_DIGITS = {'零':0,'壹':1,'貳':2,'參':3,'叁':3,'参':3,'肆':4,'伍':5,'陸':6,'柒':7,'捌':8,'玖':9};
+const CN_UNITS = {'拾':10,'佰':100,'仟':1000};
+const CN_SECTIONS = {'萬':1e4,'億':1e8,'兆':1e12};
+const CN_CHARS = Object.keys(CN_DIGITS).join('') + Object.keys(CN_UNITS).join('')
+               + Object.keys(CN_SECTIONS).join('');
+
+function cnAmountToInt(s) {
+  let total = 0, section = 0, current = 0;
+  for (const ch of s) {
+    if (ch in CN_DIGITS) current = CN_DIGITS[ch];
+    else if (ch in CN_UNITS) { section += (current || 1) * CN_UNITS[ch]; current = 0; }
+    else if (ch in CN_SECTIONS) {
+      section = (section + current) * CN_SECTIONS[ch];
+      total += section; section = 0; current = 0;
+    }
+  }
+  return total + section + current;
+}
+
+const RE_CN_THEN_AR = new RegExp(
+  `[新]?[臺台]?幣?\\s*([${CN_CHARS}]{2,})\\s*元整?[^（()）0-9]{0,6}` +
+  `[（(]\\s*(?:NT\\$|新[臺台]幣)?\\s*([0-9][0-9,]*)\\s*元?整?\\s*[)）]`, 'g');
+const RE_AR_THEN_CN = new RegExp(
+  `(?:NT\\$|新[臺台]幣)\\s*([0-9][0-9,]*)\\s*元?整?[^（()）]{0,6}` +
+  `[（(]\\s*(?:新[臺台]幣)?\\s*([${CN_CHARS}]{2,})\\s*元整?\\s*[)）]`, 'g');
+
+function checkAmountConsistency(segments, rule) {
+  const findings = [];
+  for (const seg of segments) {
+    const pairs = [];
+    for (const m of seg.text.matchAll(RE_CN_THEN_AR)) pairs.push([m[1], m[2], m[0]]);
+    for (const m of seg.text.matchAll(RE_AR_THEN_CN)) pairs.push([m[2], m[1], m[0]]);
+    for (const [cn, ar, matched] of pairs) {
+      const cnVal = cnAmountToInt(cn);
+      const arVal = parseInt(ar.replace(/,/g, ''), 10);
+      if (cnVal !== arVal) {
+        findings.push({
+          rule_id: rule.id, severity: rule.severity,
+          message: `金額大小寫不一致：大寫「${cn}」＝${cnVal.toLocaleString()} 元，` +
+                   `數字為 ${arVal.toLocaleString()} 元。`,
+          location: seg.location, snippet: matched,
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+const RE_ROC = /(?:中華)?民國\s*(\d{1,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/g;
+const RE_AD = /(?:西元\s*)?((?:19|20)\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/g;
+function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+
+function checkDateValidity(segments, rule) {
+  const findings = [];
+  const push = (seg, matched, y, mo, d) => {
+    if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= daysInMonth(y, mo))) {
+      findings.push({
+        rule_id: rule.id, severity: rule.severity,
+        message: `無效日期：「${matched}」不是存在的日期，請勘誤。`,
+        location: seg.location, snippet: matched,
+      });
+    }
+  };
+  for (const seg of segments) {
+    const spans = [];
+    for (const m of seg.text.matchAll(RE_ROC)) {
+      spans.push([m.index, m.index + m[0].length]);
+      push(seg, m[0], +m[1] + 1911, +m[2], +m[3]);
+    }
+    for (const m of seg.text.matchAll(RE_AD)) {
+      const inRoc = spans.some(([s, e]) => s <= m.index && m.index + m[0].length <= e);
+      if (!inRoc) push(seg, m[0], +m[1], +m[2], +m[3]);
+    }
+  }
+  return findings;
+}
+
+const RE_UNDERLINE = /[_＿]{2,}/g;
+const RE_FW_SPACE = /(?:：\s*[　]{2,})|(?:[　]{2,}\s*(?=[元年月日%％]))/g;
+
+function checkBlankFields(segments, rule) {
+  const findings = [];
+  for (const seg of segments) {
+    let hits = (seg.text.match(RE_UNDERLINE) || []).length
+             + (seg.text.match(RE_FW_SPACE) || []).length;
+    if (seg.text.includes('□') && !seg.text.includes('■') && !seg.text.includes('☑')) hits += 1;
+    if (hits) {
+      findings.push({
+        rule_id: rule.id, severity: rule.severity,
+        message: `疑似未填寫欄位（${hits} 處），請確認是否漏填。`,
+        location: seg.location, snippet: seg.text.slice(0, 60),
+      });
+    }
+  }
+  return findings;
+}
+
+const BUILTIN_CHECKS = {
+  amount_consistency: checkAmountConsistency,
+  date_validity: checkDateValidity,
+  blank_fields: checkBlankFields,
+};
+
+// ───────────────────────── 規則引擎（與 Python 版 rules.py 對應） ─────────────────────────
+function activeRules(docType) {
+  const ext = getExtensions();
+  const all = [...BASE_RULES, ...getCustomRules()]
+    .filter(r => r.doc_type === 'common' || r.doc_type === docType)
+    .map(r => ({ ...r }));
+  for (const r of all) {
+    if (ext[r.id] && r.patterns) r.patterns = [...r.patterns, ...ext[r.id]];
+  }
+  return all;
+}
+
+function detectDocType(fullText) {
+  if (/承攬|發包|工程契約/.test(fullText)) return 'subcontract';
+  if (/訂購單|訂購契約|採購/.test(fullText)) return 'purchase_order';
+  return 'common';
+}
+
+function runRules(rules, segments) {
+  const fullText = segments.map(s => s.text).join('\n');
+  const bodyText = segments.filter(s => !s.text.includes('簡稱')).map(s => s.text).join('\n');
+  const findings = [];
+  for (const rule of rules) {
+    if (rule.type === 'required') {
+      if (!rule.patterns.some(p => new RegExp(p).test(fullText))) {
+        findings.push({
+          rule_id: rule.id, severity: rule.severity, location: '全文', snippet: '',
+          message: rule.message ||
+            `全文未發現「${rule.name || rule.patterns.join('／')}」相關條款，請確認是否遺漏。`,
+        });
+      }
+    } else if (rule.type === 'forbidden') {
+      for (const seg of segments) {
+        for (const p of rule.patterns) {
+          const m = seg.text.match(new RegExp(p));
+          if (m) {
+            findings.push({
+              rule_id: rule.id, severity: rule.severity,
+              message: rule.message || `出現不建議用語「${m[0]}」。`,
+              location: seg.location, snippet: seg.text.slice(0, 60),
+            });
+            break;
+          }
+        }
+      }
+    } else if (rule.type === 'consistency') {
+      // 排除含「簡稱」的定義段落（如「定作人：Ｘ公司（以下簡稱甲方）」為標準寫法）
+      const present = rule.groups
+        .filter(g => g.some(t => new RegExp(t).test(bodyText)))
+        .map(g => g.join('／'));
+      if (present.length > 1) {
+        findings.push({
+          rule_id: rule.id, severity: rule.severity, location: '全文', snippet: '',
+          message: rule.message || `用語混用：${present.join('、')} 同時出現，請統一。`,
+        });
+      }
+    } else if (rule.type === 'builtin') {
+      findings.push(...BUILTIN_CHECKS[rule.check](segments, rule));
+    }
+  }
+  findings.sort((a, b) =>
+    (SEV_ORDER[a.severity] - SEV_ORDER[b.severity]) ||
+    a.rule_id.localeCompare(b.rule_id) || a.location.localeCompare(b.location));
+  return findings;
+}
+
+async function reviewFile(file, docTypeChoice) {
+  const suffix = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+  let segments;
+  if (suffix === '.docx') segments = await extractDocx(file);
+  else if (suffix === '.pdf') segments = await extractPdf(file);
+  else if (suffix === '.doc') throw new Error('不支援舊版 .doc，請先另存為 .docx。');
+  else throw new Error(`不支援的格式 ${suffix}（僅 .docx/.pdf）。`);
+  const fullText = segments.map(s => s.text).join('\n');
+  const docType = docTypeChoice === 'auto' ? detectDocType(fullText) : docTypeChoice;
+  let findings = runRules(activeRules(docType), segments);
+  const sigs = new Set(getSuppressions().map(s => s.signature));
+  const before = findings.length;
+  findings = findings.filter(f => !sigs.has(signature(f.rule_id, f.snippet)));
+  return { docType, findings, suppressed: before - findings.length };
+}
+
+// ───────────────────────── UI ─────────────────────────
+const drop = $('#drop'), fileInput = $('#file-input'), resultsEl = $('#results');
+
+drop.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { review([...fileInput.files]); fileInput.value = ''; });
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add('hover');
+}));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove('hover');
+}));
+drop.addEventListener('drop', e => review([...e.dataTransfer.files]));
+
+async function review(files) {
+  if (!files.length) return;
+  toast('審查中…', 60000);
+  const docTypeChoice = $('#doc-type').value;
+  for (const file of files) {
+    const card = document.createElement('div');
+    card.className = 'card file-card';
+    try {
+      const r = await reviewFile(file, docTypeChoice);
+      const counts = { error: 0, warning: 0, info: 0 };
+      r.findings.forEach(f => counts[f.severity]++);
+      let html = `<h2>${esc(file.name)}</h2>
+        <div class="sub">${esc(DOC_TYPES[r.docType])}．錯誤 ${counts.error}、警告 ${counts.warning}、提示 ${counts.info}` +
+        (r.suppressed ? `．已自動略過 ${r.suppressed} 項學習過的誤報` : '') + `</div>`;
+      if (!r.findings.length) {
+        html += `<span class="clean">未發現問題。</span>`;
+      } else {
+        html += `<table><tr><th>等級</th><th>規則</th><th>位置</th><th>說明</th><th>原文節錄</th><th>回饋</th></tr>`;
+        for (const f of r.findings) {
+          html += `<tr>
+            <td><span class="badge ${f.severity}">${esc(SEV_LABEL[f.severity])}</span></td>
+            <td><code>${esc(f.rule_id)}</code></td>
+            <td class="loc">${esc(f.location)}</td>
+            <td>${esc(f.message)}</td>
+            <td class="snippet">${esc(f.snippet)}</td>
+            <td class="acts" data-finding='${esc(JSON.stringify(f))}' data-file="${esc(file.name)}">
+              <button class="fb-ok" title="此發現正確，記為有效">✔ 正確</button>
+              <button class="fb-fp" title="此發現是誤報，讓系統學會不再報">✘ 誤報</button>
+            </td></tr>`;
+        }
+        html += `</table>`;
+      }
+      card.innerHTML = html;
+    } catch (err) {
+      card.innerHTML = `<h2>${esc(file.name)}</h2><p class="error-msg">無法審查：${esc(err.message)}</p>`;
+    }
+    resultsEl.prepend(card);
+  }
+  toast('審查完成');
+}
+
+resultsEl.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const cell = btn.closest('.acts');
+  const finding = JSON.parse(cell.dataset.finding);
+  const verdict = btn.classList.contains('fb-fp') ? 'false_positive' : 'confirmed';
+  let extend = '';
+  if (verdict === 'false_positive' && !finding.snippet) {
+    extend = (prompt(
+      '這是全文型規則（找不到條款才報）。\n' +
+      '若合約中其實有這個條款，請輸入它實際使用的關鍵字（可用 regex），' +
+      '系統會把它學進規則；留空則只記錄誤報。') || '').trim();
+  }
+  try {
+    const outcome = recordFeedback(verdict, finding, cell.dataset.file, extend);
+    cell.innerHTML = `<span class="learned">${esc(outcome.detail)}</span>`;
+    refreshStats();
+  } catch (err) {
+    toast('回饋失敗：' + err.message, 5000);
+  }
+});
+
+$('#r-submit').addEventListener('click', () => {
+  const type = $('#r-type').value;
+  const id = $('#r-id').value.trim();
+  const raw = $('#r-patterns').value.split(';').map(s => s.trim()).filter(Boolean);
+  if (!id) return toast('請填規則 id。');
+  if (!raw.length) return toast('請填關鍵字／regex。');
+  if ([...BASE_RULES, ...getCustomRules()].some(r => r.id === id)) {
+    return toast(`規則 id「${id}」已存在，請換一個。`, 5000);
+  }
+  try { raw.forEach(p => p.split('|').forEach(t => new RegExp(t))); }
+  catch (err) { return toast('regex 無效：' + err.message, 5000); }
+  if (type === 'consistency' && raw.length < 2) {
+    return toast('consistency 至少需要兩組用語（以「;」分隔）。', 5000);
+  }
+  const rule = {
+    id, type, doc_type: $('#r-doc').value, severity: $('#r-severity').value,
+    message: $('#r-message').value.trim(),
+  };
+  if (type === 'consistency') rule.groups = raw.map(g => g.split('|'));
+  else rule.patterns = raw;
+  const custom = getCustomRules();
+  custom.push(rule);
+  store.set('customRules', custom);
+  toast(`已新增規則「${id}」。`);
+  $('#r-id').value = ''; $('#r-patterns').value = ''; $('#r-message').value = '';
+  refreshStats(); loadRules();
+});
+
+function loadRules() {
+  const ext = getExtensions();
+  const rows = [...BASE_RULES.map(r => ({ ...r, src: '內建' })),
+                ...getCustomRules().map(r => ({ ...r, src: '自訂' }))]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map(r => {
+      const extra = ext[r.id] ? `＋已學習關鍵字：${ext[r.id].join('、')}` : '';
+      return `<li><code>${esc(r.id)}</code>［${esc(r.severity)}／${esc(r.type)}］ ` +
+        `${esc(r.name || r.message || '')} <span class="snippet">(${r.src}${esc(extra)})</span></li>`;
+    });
+  $('#rules-list').innerHTML = rows.join('');
+}
+$('#rules-details').addEventListener('toggle', e => { if (e.target.open) loadRules(); });
+
+// ───────────────────────── 學習資料匯出／匯入 ─────────────────────────
+function download(name, text, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$('#export-learning').addEventListener('click', () => {
+  download('contract-review-learning.json', JSON.stringify({
+    exported: new Date().toISOString(),
+    suppressions: getSuppressions(), feedback: getFeedback(),
+    customRules: getCustomRules(), patternExtensions: getExtensions(),
+  }, null, 2), 'application/json');
+});
+
+$('#import-learning').addEventListener('click', () => $('#import-input').click());
+$('#import-input').addEventListener('change', async () => {
+  const file = $('#import-input').files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const merge = (key, getter, keyOf) => {
+      const cur = getter();
+      const have = new Set(cur.map(keyOf));
+      for (const item of data[key] || []) if (!have.has(keyOf(item))) cur.push(item);
+      store.set(key, cur);
+    };
+    merge('suppressions', getSuppressions, s => s.signature);
+    merge('feedback', getFeedback, f => f.time + f.rule_id);
+    merge('customRules', getCustomRules, r => r.id);
+    const ext = getExtensions();
+    for (const [id, pats] of Object.entries(data.patternExtensions || {})) {
+      ext[id] = [...new Set([...(ext[id] || []), ...pats])];
+    }
+    store.set('patternExtensions', ext);
+    refreshStats();
+    toast('學習資料已匯入（與現有資料合併）。');
+  } catch (err) { toast('匯入失敗：' + err.message, 5000); }
+  $('#import-input').value = '';
+});
+
+$('#export-rules').addEventListener('click', () => {
+  const custom = getCustomRules();
+  const ext = getExtensions();
+  if (!custom.length && !Object.keys(ext).length) return toast('目前沒有自訂規則或已學習的關鍵字。');
+  const yq = s => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  let out = '# 由單機版匯出的自訂規則；放進 rules/ 目錄即可生效\n' +
+            '# 注意：本檔 doc_type 為 common，若規則只適用特定文件類型，請自行搬到對應規則檔\n' +
+            'doc_type: common\nrules:\n';
+  for (const r of custom) {
+    out += `  - id: ${r.id}\n    type: ${r.type}\n    severity: ${r.severity}\n`;
+    if (r.message) out += `    message: ${yq(r.message)}\n`;
+    if (r.patterns) out += `    patterns: [${r.patterns.map(yq).join(', ')}]\n`;
+    if (r.groups) {
+      out += `    groups:\n`;
+      for (const g of r.groups) out += `      - [${g.map(yq).join(', ')}]\n`;
+    }
+  }
+  if (Object.keys(ext).length) {
+    out += '\n# 以下是既有規則已學習的補充關鍵字，請手動併入原規則的 patterns：\n';
+    for (const [id, pats] of Object.entries(ext)) {
+      out += `#   ${id}: ${pats.join('、')}\n`;
+    }
+  }
+  download('custom-rules.yaml', out, 'text/yaml');
+});
+
+$('#clear-learning').addEventListener('click', () => {
+  if (!confirm('確定要清除全部學習資料（誤報抑制、回饋紀錄、自訂規則、已學關鍵字）？此動作無法復原。')) return;
+  ['suppressions', 'feedback', 'customRules', 'patternExtensions']
+    .forEach(k => localStorage.removeItem('cv2.' + k));
+  refreshStats();
+  toast('已清除全部學習資料。');
+});
+
+refreshStats();
+</script>
+</body>
+</html>

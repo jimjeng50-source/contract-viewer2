@@ -10,7 +10,19 @@ pip install -r requirements.txt
 
 需要 Python 3.10+。
 
-## 互動網頁（推薦）
+## 單機版 HTML（免安裝）
+
+`dist/合約審查_單機版.html` 是一個完全自足的離線網頁：下載這一個檔案，雙擊用瀏覽器開啟即可拖放審查 .docx／.pdf，不需要 Python、不需要伺服器、不需要網路，合約內容不會離開你的電腦。
+
+- 功能與伺服器版相同：拖放審查、誤報學習、補充關鍵字、線上加規則。
+- 學習資料與自訂規則存在瀏覽器 localStorage；「學習資料管理」區可**匯出／匯入 JSON**（備份或帶到別台電腦），自訂規則與學到的關鍵字可**匯出成 YAML** 併回本 repo 的 `rules/`。
+- 頁面上方會顯示規則版本（打包日期與內建規則數）。規則檔更新後要重新打包：
+
+```bash
+python build_standalone.py    # 需要 node/npm（自動下載前端函式庫）→ dist/合約審查_單機版.html
+```
+
+## 互動網頁（伺服器版）
 
 ```bash
 python review.py serve            # 啟動後開 http://127.0.0.1:8000/
