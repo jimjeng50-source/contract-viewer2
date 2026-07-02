@@ -10,6 +10,7 @@ from .extract import extract_segments
 from .findings import Finding
 from .learning import DEFAULT_LEARNING_DIR, apply_suppressions
 from .rules import load_rules_for, run_rules
+from .summary import SummaryField, extract_summary
 
 DEFAULT_RULES_DIR = Path(__file__).resolve().parent.parent / "rules"
 
@@ -40,6 +41,7 @@ class ReviewResult:
     doc_type_label: str
     findings: list[Finding]
     suppressed_count: int  # 因學習到的誤報而被略過的發現數
+    summary: list[SummaryField]  # 商務摘要（幣別金額、日期、LD、Incoterms…）
 
 
 def review_file(
@@ -62,4 +64,5 @@ def review_file(
         doc_type_label=DOC_TYPES.get(doc_type, doc_type),
         findings=findings,
         suppressed_count=suppressed,
+        summary=extract_summary(segments),
     )

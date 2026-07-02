@@ -45,6 +45,15 @@
   .badge.info    { background: var(--info-bg); color: var(--info); }
   .snippet { color: var(--muted); font-size: 13px; word-break: break-all; }
   .loc { white-space: nowrap; }
+  .biz { margin: 4px 0 14px; border: 1px solid var(--line); border-radius: 8px;
+         padding: 10px 12px; background: #fafbfc; }
+  .biz summary { font-size: 14px; }
+  .biz table { margin-top: 8px; }
+  .biz td, .biz th { padding: 5px 8px; font-size: 13px; }
+  .biz .fld { color: var(--muted); white-space: nowrap; width: 130px; }
+  .biz .miss { color: var(--warn); background: var(--warn-bg);
+               padding: 1px 6px; border-radius: 4px; }
+  .biz .vloc { color: var(--muted); font-size: 12px; }
   .acts { white-space: nowrap; }
   .acts button { font-size: 12px; padding: 4px 8px; margin-right: 4px; }
   .learned { color: var(--ok); font-size: 12px; }
@@ -403,6 +412,125 @@ const BUILTIN_CHECKS = {
   blank_fields: checkBlankFields,
 };
 
+// ───────────────────────── 商務摘要擷取（與 Python 版 summary.py 對應） ─────────────────────────
+const NUM = '[0-9][0-9,]*(?:\\.[0-9]+)?';
+const CURRENCY_PATTERNS = [
+  ['新臺幣', `(?:NT\\$|NTD|TWD|新[臺台]幣)\\s*(${NUM})`],
+  ['美元', `(?:US\\$|USD|美元|美金)\\s*(${NUM})`],
+  ['歐元', `(?:EUR|€|歐元)\\s*(${NUM})`],
+  ['日圓', `(?:JPY|日圓|日幣)\\s*(${NUM})`],
+  ['人民幣', `(?:CNY|RMB|人民幣)\\s*(${NUM})`],
+  ['英鎊', `(?:GBP|英鎊)\\s*(${NUM})`],
+];
+const RE_REV_CURRENCY = new RegExp(`(${NUM})\\s*(美元|美金|歐元|日圓|日幣|人民幣|英鎊)`, 'g');
+const RE_GENERIC_YUAN = new RegExp(`(${NUM})\\s*元`, 'g');
+const RE_CN_AMOUNT = new RegExp(`(?:新[臺台]幣)?\\s*([${CN_CHARS}]{3,})\\s*元`, 'g');
+const RE_ROC_DATE_S = /(?:中華)?民國\s*\d{1,3}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/g;
+const RE_AD_DATE_S = /(?:西元\s*)?(?:19|20)\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/g;
+const RE_INCOTERM = /\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP|DDU|DES|DEQ|C&F|CNF)\b/g;
+const RE_INCOTERM_VER = /Incoterms?\s*®?\s*(20\d{2}|19\d{2})/gi;
+const RE_PARTY_COLON = /(甲方|乙方|買方|賣方|定作人|承攬人)\s*[：:]\s*([^\s（(，。;；：]{2,30})/g;
+const RE_PARTY_ALIAS = /([^\s（(，。;；：]{2,30})\s*[（(]\s*以下簡稱\s*(甲方|乙方|買方|賣方|定作人|承攬人)\s*[)）]/g;
+const RE_DURATION = /[0-9０-９一二三四五六七八九十百]+\s*(?:個)?\s*(?:日|天|週|月|年)/;
+const SENTENCE_FIELDS = [
+  ['deadlines', '重要期限', true, /交貨|交期|完工|竣工|工期|到貨|交付期限|有效期/],
+  ['payment', '付款條件', true, /付款|支付|給付價金|價金給付|T\/T|L\/C|信用狀|電匯|月結|票期|[Nn]et\s*\d+/],
+  ['ld', '違約金（LD）', true, /違約金|逾期罰|懲罰性|賠償金|[Ll]iquidated\s+[Dd]amages?|\bLD\b/],
+  ['bond', '履約保證金', false, /履約保證|保證金/],
+  ['warranty', '保固', false, /保固|瑕疵擔保/],
+];
+const MAX_VALUES = 8, SNIPPET_LEN = 80;
+
+function overlaps(span, taken) { return taken.some(([s, e]) => s < span[1] && span[0] < e); }
+function trimSent(s) { return s.length <= SNIPPET_LEN ? s : s.slice(0, SNIPPET_LEN - 1) + '…'; }
+
+function extractSummary(segments) {
+  const mkField = (id, label, critical) => ({ id, label, critical, values: [] });
+  const add = (fld, text, location) => {
+    text = text.trim();
+    if (!text || fld.values.length >= MAX_VALUES) return;
+    if (fld.values.some(v => v.text === text)) return;
+    fld.values.push({ text, location });
+  };
+  const parties = mkField('parties', '當事人', false);
+  const amounts = mkField('amounts', '幣別金額', true);
+  const dates = mkField('dates', '日期', true);
+  const incoterm = mkField('incoterm', '貿易條件（Incoterms）', false);
+  const sf = Object.fromEntries(
+    SENTENCE_FIELDS.map(([id, label, critical]) => [id, mkField(id, label, critical)]));
+
+  for (const seg of segments) {
+    for (const m of seg.text.matchAll(RE_PARTY_COLON)) add(parties, `${m[1]}：${m[2]}`, seg.location);
+    for (const m of seg.text.matchAll(RE_PARTY_ALIAS)) add(parties, `${m[2]}：${m[1]}`, seg.location);
+
+    const taken = [];
+    for (const [label, pattern] of CURRENCY_PATTERNS) {
+      for (const m of seg.text.matchAll(new RegExp(pattern, 'g'))) {
+        taken.push([m.index, m.index + m[0].length]);
+        add(amounts, `${label} ${m[1]}`, seg.location);
+      }
+    }
+    for (const m of seg.text.matchAll(RE_REV_CURRENCY)) {
+      const span = [m.index, m.index + m[0].length];
+      if (!overlaps(span, taken)) { taken.push(span); add(amounts, `${m[2]} ${m[1]}`, seg.location); }
+    }
+    for (const m of seg.text.matchAll(RE_CN_AMOUNT)) {
+      taken.push([m.index, m.index + m[0].length]);
+      add(amounts, `大寫 ${m[1]}元（＝${cnAmountToInt(m[1]).toLocaleString()}）`, seg.location);
+    }
+    for (const m of seg.text.matchAll(RE_GENERIC_YUAN)) {
+      if (!overlaps([m.index, m.index + m[0].length], taken)) {
+        add(amounts, `${m[1]} 元（未標幣別）`, seg.location);
+      }
+    }
+
+    const spans = [];
+    for (const m of seg.text.matchAll(RE_ROC_DATE_S)) {
+      spans.push([m.index, m.index + m[0].length]);
+      add(dates, m[0], seg.location);
+    }
+    for (const m of seg.text.matchAll(RE_AD_DATE_S)) {
+      if (!overlaps([m.index, m.index + m[0].length], spans)) add(dates, m[0], seg.location);
+    }
+
+    for (const m of seg.text.matchAll(RE_INCOTERM)) {
+      add(incoterm, seg.text.slice(m.index, m.index + m[0].length + 24).trim(), seg.location);
+    }
+    for (const m of seg.text.matchAll(RE_INCOTERM_VER)) add(incoterm, m[0], seg.location);
+  }
+
+  for (const seg of segments) {
+    for (const sent0 of seg.text.split(/[。；;]/)) {
+      const sent = sent0.trim();
+      if (!sent) continue;
+      for (const [id, , , keywords] of SENTENCE_FIELDS) {
+        if (!keywords.test(sent)) continue;
+        if (id === 'deadlines' && !(RE_DURATION.test(sent) ||
+            /民國\s*\d{1,3}\s*年/.test(sent) || /(?:19|20)\d{2}\s*年/.test(sent))) continue;
+        add(sf[id], trimSent(sent), seg.location);
+      }
+    }
+  }
+  return [parties, amounts, dates, sf.deadlines, sf.payment, incoterm, sf.ld, sf.bond, sf.warranty];
+}
+
+function bizSummary(summary) {
+  let rows = '';
+  for (const fld of summary) {
+    let content;
+    if (fld.values.length) {
+      content = fld.values.map(v =>
+        `${esc(v.text)} <span class="vloc">（${esc(v.location)}）</span>`).join('<br>');
+    } else {
+      content = fld.critical ? '<span class="miss">⚠ 未擷取到，請人工確認</span>'
+                             : '<span class="vloc">—</span>';
+    }
+    rows += `<tr><td class="fld">${esc(fld.label)}</td><td>${content}</td></tr>`;
+  }
+  return `<details class="biz" open><summary>商務摘要（審查前擷取的重要基本資訊）</summary>
+    <table>${rows}</table></details>`;
+}
+
 // ───────────────────────── 規則引擎（與 Python 版 rules.py 對應） ─────────────────────────
 function activeRules(docType) {
   const ext = getExtensions();
@@ -482,7 +610,8 @@ async function reviewFile(file, docTypeChoice) {
   const sigs = new Set(getSuppressions().map(s => s.signature));
   const before = findings.length;
   findings = findings.filter(f => !sigs.has(signature(f.rule_id, f.snippet)));
-  return { docType, findings, suppressed: before - findings.length };
+  return { docType, findings, suppressed: before - findings.length,
+           summary: extractSummary(segments) };
 }
 
 // ───────────────────────── UI ─────────────────────────
@@ -512,6 +641,7 @@ async function review(files) {
       let html = `<h2>${esc(file.name)}</h2>
         <div class="sub">${esc(DOC_TYPES[r.docType])}．錯誤 ${counts.error}、警告 ${counts.warning}、提示 ${counts.info}` +
         (r.suppressed ? `．已自動略過 ${r.suppressed} 項學習過的誤報` : '') + `</div>`;
+      html += bizSummary(r.summary);
       if (!r.findings.length) {
         html += `<span class="clean">未發現問題。</span>`;
       } else {

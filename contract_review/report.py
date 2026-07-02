@@ -26,8 +26,8 @@ def render_console(file_name: str, doc_type_label: str, findings: list[Finding])
     return "\n".join(lines)
 
 
-def render_markdown(results: list[tuple[str, str, list[Finding]]]) -> str:
-    """results: (檔名, 文件類型標籤, findings) 的列表。"""
+def render_markdown(results) -> str:
+    """results: engine.ReviewResult 的列表。"""
     lines = [
         "# 合約審查報告",
         "",
@@ -35,9 +35,13 @@ def render_markdown(results: list[tuple[str, str, list[Finding]]]) -> str:
         f"- 審查檔案：{len(results)} 份",
         "",
     ]
-    for file_name, doc_type_label, findings in results:
+    for result in results:
+        file_name, doc_type_label, findings = (
+            result.file_name, result.doc_type_label, result.findings
+        )
         lines += [f"## {file_name}", "", f"- 文件類型：{doc_type_label}",
                   f"- 結果統計：{summary_line(findings)}", ""]
+        lines += _summary_markdown(result.summary)
         if not findings:
             lines += ["未發現問題。", ""]
             continue
@@ -51,6 +55,22 @@ def render_markdown(results: list[tuple[str, str, list[Finding]]]) -> str:
             )
         lines.append("")
     return "\n".join(lines)
+
+
+def _summary_markdown(summary) -> list[str]:
+    lines = ["### 商務摘要", "", "| 項目 | 擷取內容 |", "| --- | --- |"]
+    for fld in summary:
+        if fld.values:
+            content = "<br>".join(
+                f"{v.text.replace('|', '｜')}（{v.location}）" for v in fld.values
+            )
+        elif fld.critical:
+            content = "⚠ 未擷取到，請人工確認"
+        else:
+            content = "—"
+        lines.append(f"| {fld.label} | {content} |")
+    lines.append("")
+    return lines
 
 
 def has_errors(findings: list[Finding]) -> bool:

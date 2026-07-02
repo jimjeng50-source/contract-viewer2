@@ -45,6 +45,15 @@
   .badge.info    { background: var(--info-bg); color: var(--info); }
   .snippet { color: var(--muted); font-size: 13px; word-break: break-all; }
   .loc { white-space: nowrap; }
+  .biz { margin: 4px 0 14px; border: 1px solid var(--line); border-radius: 8px;
+         padding: 10px 12px; background: #fafbfc; }
+  .biz summary { font-size: 14px; }
+  .biz table { margin-top: 8px; }
+  .biz td, .biz th { padding: 5px 8px; font-size: 13px; }
+  .biz .fld { color: var(--muted); white-space: nowrap; width: 130px; }
+  .biz .miss { color: var(--warn); background: var(--warn-bg);
+               padding: 1px 6px; border-radius: 4px; }
+  .biz .vloc { color: var(--muted); font-size: 12px; }
   .acts { white-space: nowrap; }
   .acts button { font-size: 12px; padding: 4px 8px; margin-right: 4px; }
   .learned { color: var(--ok); font-size: 12px; }
@@ -193,6 +202,24 @@ function esc(s) {
   return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
 
+function bizSummary(summary) {
+  if (!summary) return '';
+  let rows = '';
+  for (const fld of summary) {
+    let content;
+    if (fld.values.length) {
+      content = fld.values.map(v =>
+        `${esc(v.text)} <span class="vloc">（${esc(v.location)}）</span>`).join('<br>');
+    } else {
+      content = fld.critical ? '<span class="miss">⚠ 未擷取到，請人工確認</span>'
+                             : '<span class="vloc">—</span>';
+    }
+    rows += `<tr><td class="fld">${esc(fld.label)}</td><td>${content}</td></tr>`;
+  }
+  return `<details class="biz" open><summary>商務摘要（審查前擷取的重要基本資訊）</summary>
+    <table>${rows}</table></details>`;
+}
+
 function renderResults(results) {
   for (const r of results.reverse()) {
     const card = document.createElement('div');
@@ -206,6 +233,7 @@ function renderResults(results) {
     let html = `<h2>${esc(r.file)}</h2>
       <div class="sub">${esc(r.doc_type_label)}．錯誤 ${c.error}、警告 ${c.warning}、提示 ${c.info}` +
       (r.suppressed ? `．已自動略過 ${r.suppressed} 項學習過的誤報` : '') + `</div>`;
+    html += bizSummary(r.summary);
     if (!r.findings.length) {
       html += `<span class="clean">未發現問題。</span>`;
     } else {

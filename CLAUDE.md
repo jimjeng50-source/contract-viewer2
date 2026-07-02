@@ -21,7 +21,8 @@ python samples/make_samples.py           # 重新產生範例合約
 - `contract_review/extract.py`：docx/pdf → 帶位置資訊的文字段落
 - `contract_review/rules.py`：YAML 規則引擎（required／forbidden／consistency／builtin 四種型別）
 - `contract_review/checks.py`：程式化檢查（金額大小寫比對、日期有效性、空欄偵測）
-- `contract_review/engine.py`：CLI 與網頁共用的審查流程（抽取→規則→學習過濾）
+- `contract_review/summary.py`：商務摘要擷取（幣別金額、日期、LD、Incoterms…）
+- `contract_review/engine.py`：CLI 與網頁共用的審查流程（抽取→摘要→規則→學習過濾）
 - `contract_review/learning.py`：自動學習（誤報抑制、關鍵字寫回規則、回饋統計）
 - `contract_review/webapp.py` ＋ `templates/index.html`：Flask 互動網頁
 - `templates/standalone.html` ＋ `build_standalone.py`：單機離線版（引擎為 JS 移植，改 Python 檢查邏輯時要同步改這裡並重打包 dist/）

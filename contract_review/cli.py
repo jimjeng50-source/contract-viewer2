@@ -29,7 +29,7 @@ def cmd_check(args) -> int:
         print(render_console(result.file_name, result.doc_type_label, result.findings))
         if result.suppressed_count:
             print(f"  （另有 {result.suppressed_count} 項已學習的誤報被自動略過）")
-        results.append((result.file_name, result.doc_type_label, result.findings))
+        results.append(result)
         if has_errors(result.findings):
             exit_code = max(exit_code, 1)
     if args.output and results:

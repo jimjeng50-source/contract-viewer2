@@ -84,6 +84,18 @@ def create_app(
                     "counts": counts,
                     "suppressed": result.suppressed_count,
                     "findings": findings,
+                    "summary": [
+                        {
+                            "id": fld.id,
+                            "label": fld.label,
+                            "critical": fld.critical,
+                            "values": [
+                                {"text": v.text, "location": v.location}
+                                for v in fld.values
+                            ],
+                        }
+                        for fld in result.summary
+                    ],
                 }
             )
         return jsonify({"results": results})
