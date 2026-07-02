@@ -1,0 +1,44 @@
+# 訂購單合約專用規則
+doc_type: purchase_order
+rules:
+  - id: po-price
+    name: 價金／總價
+    type: required
+    severity: error
+    patterns: ["總價", "價金", "契約金額", "合約金額", "訂購金額", "總金額"]
+    message: 全文未發現價金／總價條款，訂購單合約應載明金額。
+
+  - id: po-payment
+    name: 付款條件
+    type: required
+    severity: error
+    patterns: ["付款條件", "付款方式", "付款辦法", "給付價金"]
+    message: 全文未發現付款條件條款，請確認是否遺漏。
+
+  - id: po-delivery
+    name: 交貨期限
+    type: required
+    severity: error
+    patterns: ["交貨", "交期", "交付期限", "到貨"]
+    message: 全文未發現交貨期限相關條款，請確認是否遺漏。
+
+  - id: po-acceptance
+    name: 驗收
+    type: required
+    severity: warning
+    patterns: ["驗收", "檢驗"]
+    message: 全文未發現驗收／檢驗條款，請確認是否遺漏。
+
+  - id: po-penalty
+    name: 違約金／逾期罰則
+    type: required
+    severity: warning
+    patterns: ["違約金", "逾期罰款", "罰則", "懲罰性"]
+    message: 全文未發現違約金或逾期罰則條款，請確認是否遺漏。
+
+  - id: po-warranty
+    name: 保固
+    type: required
+    severity: warning
+    patterns: ["保固", "瑕疵擔保"]
+    message: 全文未發現保固／瑕疵擔保條款，請確認是否遺漏。

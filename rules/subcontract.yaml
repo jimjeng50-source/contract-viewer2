@@ -1,0 +1,58 @@
+# 發包承攬契約專用規則
+doc_type: subcontract
+rules:
+  - id: sub-remuneration
+    name: 承攬報酬／工程款
+    type: required
+    severity: error
+    patterns: ["承攬報酬", "工程款", "契約總價", "承攬總價", "工程總價"]
+    message: 全文未發現承攬報酬／工程款條款，請確認是否遺漏。
+
+  - id: sub-duration
+    name: 工期／完工期限
+    type: required
+    severity: error
+    patterns: ["工期", "完工期限", "竣工", "開工"]
+    message: 全文未發現工期／完工期限條款，請確認是否遺漏。
+
+  - id: sub-warranty
+    name: 保固
+    type: required
+    severity: error
+    patterns: ["保固", "瑕疵擔保"]
+    message: 全文未發現保固條款，承攬契約應載明保固期間與範圍。
+
+  - id: sub-performance-bond
+    name: 履約保證
+    type: required
+    severity: warning
+    patterns: ["履約保證", "保證金"]
+    message: 全文未發現履約保證金條款，請確認是否遺漏。
+
+  - id: sub-penalty
+    name: 違約金／逾期罰則
+    type: required
+    severity: error
+    patterns: ["違約金", "逾期罰款", "罰則"]
+    message: 全文未發現違約金條款，請確認是否遺漏。
+
+  - id: sub-safety
+    name: 職業安全衛生
+    type: required
+    severity: warning
+    patterns: ["職業安全", "工安", "勞工安全", "安全衛生"]
+    message: 全文未發現職業安全衛生條款，發包承攬契約建議明訂工安責任。
+
+  - id: sub-insurance
+    name: 保險
+    type: required
+    severity: warning
+    patterns: ["保險", "投保"]
+    message: 全文未發現保險條款，請確認是否遺漏。
+
+  - id: sub-subcontract-limit
+    name: 轉包／再承攬限制
+    type: required
+    severity: info
+    patterns: ["轉包", "再承攬", "分包"]
+    message: 全文未發現轉包／再承攬限制條款，建議確認是否需要明訂。

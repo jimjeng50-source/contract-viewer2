@@ -1,0 +1,78 @@
+# 共用規則：所有文件類型都會套用
+doc_type: common
+rules:
+  # ── 內建智慧檢查 ──────────────────────────────
+  - id: common-amount-consistency
+    name: 金額大小寫一致
+    type: builtin
+    check: amount_consistency
+    severity: error
+
+  - id: common-date-validity
+    name: 日期有效性
+    type: builtin
+    check: date_validity
+    severity: error
+
+  - id: common-blank-fields
+    name: 空白欄位
+    type: builtin
+    check: blank_fields
+    severity: warning
+
+  # ── 必要條款 ──────────────────────────────
+  - id: common-parties
+    name: 當事人
+    type: required
+    severity: error
+    patterns: ["甲方", "立契約書?人", "買方", "定作人"]
+    message: 全文未發現當事人（甲方／立契約人等）記載，請確認契約當事人條款。
+
+  - id: common-signature
+    name: 簽章欄
+    type: required
+    severity: warning
+    patterns: ["簽章", "用印", "蓋章", "簽名"]
+    message: 全文未發現簽章／用印欄位，請確認末頁簽署欄是否遺漏。
+
+  - id: common-dispute
+    name: 管轄法院／爭議處理
+    type: required
+    severity: warning
+    patterns: ["管轄", "仲裁", "爭議"]
+    message: 全文未發現管轄法院或爭議處理條款，請確認是否遺漏。
+
+  # ── 用語一致性 ──────────────────────────────
+  - id: common-party-terms
+    name: 當事人稱謂統一
+    type: consistency
+    severity: warning
+    groups:
+      - ["甲方", "乙方"]
+      - ["買方", "賣方"]
+      - ["定作人", "承攬人"]
+    message: 當事人稱謂混用（甲乙方／買賣方／定作承攬人），請全文統一以免指涉不明。
+
+  - id: common-contract-term
+    name: 契約／合約用語統一
+    type: consistency
+    severity: info
+    groups:
+      - ["本契約"]
+      - ["本合約"]
+    message: 「本契約」與「本合約」混用，建議全文統一其中一種。
+
+  # ── 常見錯字／法律用語勘誤 ──────────────────────────────
+  - id: common-deposit-term
+    name: 定金用字
+    type: forbidden
+    severity: warning
+    patterns: ["訂金"]
+    message: 出現「訂金」。民法上有法律效果的用語是「定金」（民法第248條），「訂金」性質易生爭議，建議勘誤。
+
+  - id: common-typo-qie-jie
+    name: 切結／立切結書
+    type: forbidden
+    severity: warning
+    patterns: ["切結書乙[紙份]"]
+    message: 「乙紙／乙份」為舊式用法，建議改為「一紙／一份」以求全文數字用法一致。
