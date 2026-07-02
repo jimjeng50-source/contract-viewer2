@@ -1,6 +1,6 @@
 # contract-viewer2 — 合約自動審查工具
 
-自動勘誤 Word（.docx）與 PDF 格式的**訂購單合約**與**發包承攬契約**：漏條款、金額大小寫不符、無效日期、漏填空欄、用語混用、常見法律用字錯誤。規則以 YAML 維護，可隨時新增，不用改程式。
+自動勘誤 Word（.docx）與 PDF 格式的**訂購單合約**與**發包承攬契約**：漏條款、金額大小寫不符、無效日期、漏填空欄、用語混用、常見法律用字錯誤。規則以 YAML 維護，可隨時新增，不用改程式。附互動網頁介面與自動學習功能。
 
 ## 安裝
 
@@ -10,7 +10,24 @@ pip install -r requirements.txt
 
 需要 Python 3.10+。
 
-## 審查合約
+## 互動網頁（推薦）
+
+```bash
+python review.py serve            # 啟動後開 http://127.0.0.1:8000/
+python review.py serve --port 9000 --host 0.0.0.0   # 自訂埠號／對外
+```
+
+- **拖放上傳**：把 .docx／.pdf 拖進頁面（可一次多份），立即顯示審查結果。
+- **自動學習**：對每項結果按「✘ 誤報」——
+  - 有原文節錄的發現：系統記住這條文（存入 `learning/suppressions.yaml`），之後任何檔案遇到相同條文都不再回報，比對與空白無關、跨檔案生效。
+  - 全文型發現（找不到某條款）：可補充該合約實際使用的關鍵字，系統會**直接把關鍵字寫回規則檔**，規則從此認得這種寫法。
+  - 按「✔ 正確」則記錄確認，累積各規則的準確度統計（`/api/stats`）。
+- **線上加規則**：頁面下方表單可直接新增 required／forbidden／consistency 規則，寫入 `rules/custom.yaml`。
+- 所有回饋都留存於 `learning/feedback.jsonl` 供回溯。
+
+命令列審查同樣會套用已學習的抑制清單，兩邊共用同一份學習資料。
+
+## 命令列審查
 
 ```bash
 # 審查一或多份合約，自動判斷文件類型
@@ -63,9 +80,10 @@ python review.py add-rule --id custom-project-term --rule-type consistency \
 
 也可以直接編輯 YAML，格式見 `rules/common.yaml` 內註解。`python review.py list-rules` 檢視現行全部規則。
 
-## 審查經驗記憶庫
+## 記憶系統
 
-`lessons/` 累積修正過的誤報／漏報與確認有效的做法，一檔一教訓、首行摘要，規範見 `lessons/README.md`。
+- `learning/`：機器自動學習資料——誤報抑制清單（`suppressions.yaml`）與回饋流水帳（`feedback.jsonl`），由網頁回饋按鈕自動維護。
+- `lessons/`：人工整理的經驗庫——修正過的誤報／漏報與確認有效的做法，一檔一教訓、首行摘要，規範見 `lessons/README.md`。能落地成規則的教訓優先寫進 `rules/`。
 
 ## 開發
 

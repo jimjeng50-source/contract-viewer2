@@ -101,6 +101,43 @@ def _parse_rule(raw: dict, path: Path) -> Rule:
     return rule
 
 
+def append_rule(rules_dir: str | Path, file_name: str, doc_type: str, raw: dict) -> Path:
+    """驗證並把一條新規則寫入規則檔（CLI add-rule 與網頁 API 共用）。
+
+    回傳寫入的檔案路徑；驗證失敗、doc_type 不符或 id 重複時丟 ValueError。
+    """
+    rules_dir = Path(rules_dir)
+    rules_file = rules_dir / file_name
+    if rules_file.exists():
+        data = yaml.safe_load(rules_file.read_text(encoding="utf-8")) or {}
+    else:
+        data = {"doc_type": doc_type, "rules": []}
+    if data.get("doc_type", "common") != doc_type:
+        raise ValueError(
+            f"{rules_file} 的 doc_type 是「{data.get('doc_type')}」，"
+            f"與指定的「{doc_type}」不符。請改用對應的規則檔。"
+        )
+    data.setdefault("rules", [])
+
+    _parse_rule(raw, rules_file)
+    all_ids = set()
+    for path in sorted(rules_dir.glob("*.y*ml")):
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        all_ids.update(r.get("id") for r in loaded.get("rules", []) or [])
+    if raw["id"] in all_ids:
+        raise ValueError(
+            f"規則 id「{raw['id']}」已存在，請換一個 id 或直接編輯既有規則。"
+        )
+
+    data["rules"].append(raw)
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    rules_file.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False, width=100),
+        encoding="utf-8",
+    )
+    return rules_file
+
+
 def run_rules(rules: list[Rule], segments: list[Segment]) -> list[Finding]:
     findings: list[Finding] = []
     full_text = "\n".join(seg.text for seg in segments)

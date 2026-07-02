@@ -13,7 +13,7 @@ from contract_review.checks import (  # noqa: E402
     check_date_validity,
     cn_amount_to_int,
 )
-from contract_review.cli import detect_doc_type  # noqa: E402
+from contract_review.engine import detect_doc_type  # noqa: E402
 from contract_review.extract import Segment  # noqa: E402
 from contract_review.rules import Rule, load_rules_for, run_rules  # noqa: E402
 

@@ -8,6 +8,7 @@ Word（.docx）／PDF 訂購單合約與發包承攬契約的自動勘誤工具�
 pip install -r requirements.txt          # 安裝相依
 python review.py check <檔案...>         # 審查（--type auto 自動判斷文件類型）
 python review.py check f.docx -o 報告.md # 輸出 Markdown 報告
+python review.py serve                   # 互動網頁 http://127.0.0.1:8000/
 python review.py add-rule ...            # 新增規則（見 README.md）
 python review.py list-rules              # 列出所有規則
 python -m unittest discover tests        # 跑測試
@@ -19,7 +20,11 @@ python samples/make_samples.py           # 重新產生範例合約
 - `contract_review/extract.py`：docx/pdf → 帶位置資訊的文字段落
 - `contract_review/rules.py`：YAML 規則引擎（required／forbidden／consistency／builtin 四種型別）
 - `contract_review/checks.py`：程式化檢查（金額大小寫比對、日期有效性、空欄偵測）
+- `contract_review/engine.py`：CLI 與網頁共用的審查流程（抽取→規則→學習過濾）
+- `contract_review/learning.py`：自動學習（誤報抑制、關鍵字寫回規則、回饋統計）
+- `contract_review/webapp.py` ＋ `templates/index.html`：Flask 互動網頁
 - `rules/*.yaml`：規則檔；`doc_type: common` 套用到所有文件
+- `learning/`：機器學習資料（suppressions.yaml／feedback.jsonl），勿手動與 lessons 混用
 - `samples/`：含刻意錯誤的範例合約與產生器
 
 ## 工作守則（對 AI 助手）

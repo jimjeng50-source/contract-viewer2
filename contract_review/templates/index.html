@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>合約自動審查</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --ink: #1f2430; --muted: #6b7280;
+    --line: #e3e6eb; --accent: #2456a6; --accent-ink: #ffffff;
+    --err: #b3261e; --err-bg: #fdeceb; --warn: #8a5a00; --warn-bg: #fff4dc;
+    --info: #205c8c; --info-bg: #e8f2fb; --ok: #1e6f43; --ok-bg: #e7f4ec;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: baseline; justify-content: space-between;
+           flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  .stats { font-size: 13px; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 16px; margin-bottom: 16px; }
+  #drop { border: 2px dashed #b9c2cf; border-radius: 10px; padding: 36px 16px;
+          text-align: center; color: var(--muted); cursor: pointer;
+          transition: background .15s, border-color .15s; }
+  #drop.hover { background: var(--info-bg); border-color: var(--accent); color: var(--accent); }
+  #drop strong { color: var(--ink); font-size: 16px; }
+  .controls { display: flex; gap: 12px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  select, input[type=text], button, textarea {
+    font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; }
+  button { cursor: pointer; background: var(--card); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  .file-card h2 { font-size: 17px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 8px; border-top: 1px solid var(--line);
+           vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; border-top: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px;
+           font-size: 12px; white-space: nowrap; }
+  .badge.error   { background: var(--err-bg);  color: var(--err); }
+  .badge.warning { background: var(--warn-bg); color: var(--warn); }
+  .badge.info    { background: var(--info-bg); color: var(--info); }
+  .snippet { color: var(--muted); font-size: 13px; word-break: break-all; }
+  .loc { white-space: nowrap; }
+  .acts { white-space: nowrap; }
+  .acts button { font-size: 12px; padding: 4px 8px; margin-right: 4px; }
+  .learned { color: var(--ok); font-size: 12px; }
+  .clean { color: var(--ok); background: var(--ok-bg); padding: 10px 12px;
+           border-radius: 8px; display: inline-block; }
+  .error-msg { color: var(--err); }
+  details summary { cursor: pointer; font-weight: 600; }
+  .form-grid { display: grid; grid-template-columns: 140px 1fr; gap: 10px 12px;
+               margin-top: 12px; max-width: 640px; }
+  .form-grid label { padding-top: 8px; color: var(--muted); font-size: 14px; }
+  .hint { grid-column: 2; color: var(--muted); font-size: 12px; margin-top: -6px; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+           background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 8px;
+           font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none;
+           max-width: 90%; }
+  #toast.show { opacity: .95; }
+  #rules-list li { margin: 3px 0; font-size: 13px; }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>合約自動審查</h1>
+    <div class="stats" id="stats">學習狀態載入中…</div>
+  </header>
+
+  <div class="card">
+    <div id="drop">
+      <strong>把 Word（.docx）或 PDF 合約拖到這裡</strong><br>
+      或點一下選擇檔案（可一次多份）<br>
+      <span style="font-size:12px">訂購單合約／發包承攬契約皆可，預設自動判斷類型</span>
+    </div>
+    <input type="file" id="file-input" accept=".docx,.pdf" multiple hidden>
+    <div class="controls">
+      <label>文件類型
+        <select id="doc-type">
+          <option value="auto" selected>自動判斷</option>
+          {% for value, label in doc_types.items() %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <span class="stats">審完可對每項結果按「誤報」，系統會記住、之後不再報。</span>
+    </div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="card">
+    <details>
+      <summary>新增審查規則</summary>
+      <div class="form-grid">
+        <label for="r-id">規則 id</label>
+        <input type="text" id="r-id" placeholder="custom-ip">
+        <label for="r-type">型別</label>
+        <select id="r-type">
+          <option value="required">required（必要條款，找不到就報）</option>
+          <option value="forbidden">forbidden（出現就報：錯字／禁用語）</option>
+          <option value="consistency">consistency（用語混用就報）</option>
+        </select>
+        <label for="r-doc">適用文件</label>
+        <select id="r-doc">
+          <option value="common">所有文件</option>
+          {% for value, label in doc_types.items() %}
+          {% if value != 'common' %}<option value="{{ value }}">{{ label }}</option>{% endif %}
+          {% endfor %}
+        </select>
+        <label for="r-severity">嚴重度</label>
+        <select id="r-severity">
+          <option value="error">error（錯誤）</option>
+          <option value="warning" selected>warning（警告）</option>
+          <option value="info">info（提示）</option>
+        </select>
+        <label for="r-patterns">關鍵字／regex</label>
+        <input type="text" id="r-patterns" placeholder="智慧財產|智財">
+        <div class="hint">required/forbidden 用；多個 regex 以「;」分隔。consistency 改填用語組：組內用「|」、組間用「;」，例：甲方|乙方;買方|賣方</div>
+        <label for="r-message">說明訊息</label>
+        <input type="text" id="r-message" placeholder="命中時報告顯示的文字（可留空）">
+        <label></label>
+        <button class="primary" id="r-submit">新增規則</button>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <details id="rules-details">
+      <summary>目前規則清單</summary>
+      <ul id="rules-list"></ul>
+    </details>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const drop = $('#drop'), fileInput = $('#file-input'), resultsEl = $('#results');
+
+function toast(msg, ms = 3200) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+async function refreshStats() {
+  try {
+    const s = await (await fetch('/api/stats')).json();
+    $('#stats').textContent =
+      `已學習誤報 ${s.suppression_count} 條．累計回饋 ${s.feedback_count} 筆`;
+  } catch { $('#stats').textContent = ''; }
+}
+
+drop.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { review(fileInput.files); fileInput.value = ''; });
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add('hover');
+}));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove('hover');
+}));
+drop.addEventListener('drop', e => review(e.dataTransfer.files));
+
+async function review(files) {
+  if (!files || !files.length) return;
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  fd.append('doc_type', $('#doc-type').value);
+  drop.style.pointerEvents = 'none';
+  toast('審查中…', 60000);
+  try {
+    const res = await fetch('/api/review', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    renderResults(data.results);
+    toast('審查完成');
+  } catch (err) {
+    toast('審查失敗：' + err.message);
+  } finally {
+    drop.style.pointerEvents = '';
+  }
+}
+
+function esc(s) {
+  return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+function renderResults(results) {
+  for (const r of results.reverse()) {
+    const card = document.createElement('div');
+    card.className = 'card file-card';
+    if (r.error) {
+      card.innerHTML = `<h2>${esc(r.file)}</h2><p class="error-msg">無法審查：${esc(r.error)}</p>`;
+      resultsEl.prepend(card);
+      continue;
+    }
+    const c = r.counts;
+    let html = `<h2>${esc(r.file)}</h2>
+      <div class="sub">${esc(r.doc_type_label)}．錯誤 ${c.error}、警告 ${c.warning}、提示 ${c.info}` +
+      (r.suppressed ? `．已自動略過 ${r.suppressed} 項學習過的誤報` : '') + `</div>`;
+    if (!r.findings.length) {
+      html += `<span class="clean">未發現問題。</span>`;
+    } else {
+      html += `<table><tr><th>等級</th><th>規則</th><th>位置</th><th>說明</th><th>原文節錄</th><th>回饋</th></tr>`;
+      for (const f of r.findings) {
+        html += `<tr>
+          <td><span class="badge ${f.severity}">${esc(f.severity_label)}</span></td>
+          <td><code>${esc(f.rule_id)}</code></td>
+          <td class="loc">${esc(f.location)}</td>
+          <td>${esc(f.message)}</td>
+          <td class="snippet">${esc(f.snippet)}</td>
+          <td class="acts" data-finding='${esc(JSON.stringify(f))}' data-file="${esc(r.file)}">
+            <button class="fb-ok" title="此發現正確，記為有效">✔ 正確</button>
+            <button class="fb-fp" title="此發現是誤報，讓系統學會不再報">✘ 誤報</button>
+          </td></tr>`;
+      }
+      html += `</table>`;
+    }
+    card.innerHTML = html;
+    resultsEl.prepend(card);
+  }
+}
+
+resultsEl.addEventListener('click', async e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const cell = btn.closest('.acts');
+  const finding = JSON.parse(cell.dataset.finding);
+  const verdict = btn.classList.contains('fb-fp') ? 'false_positive' : 'confirmed';
+  let extend = '';
+  if (verdict === 'false_positive' && !finding.snippet) {
+    extend = prompt(
+      '這是全文型規則（找不到條款才報）。\n' +
+      '若合約中其實有這個條款，請輸入它實際使用的關鍵字（可用 regex），' +
+      '系統會把它學進規則；留空則只記錄誤報。') || '';
+  }
+  try {
+    const res = await fetch('/api/feedback', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verdict, finding, file: cell.dataset.file,
+                             extend_pattern: extend.trim() }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    cell.innerHTML = `<span class="learned">${esc(data.detail)}</span>`;
+    refreshStats();
+  } catch (err) {
+    toast('回饋失敗：' + err.message);
+  }
+});
+
+$('#r-submit').addEventListener('click', async () => {
+  const type = $('#r-type').value;
+  const rawPatterns = $('#r-patterns').value.split(';').map(s => s.trim()).filter(Boolean);
+  const body = {
+    id: $('#r-id').value.trim(),
+    rule_type: type,
+    doc_type: $('#r-doc').value,
+    severity: $('#r-severity').value,
+    message: $('#r-message').value.trim(),
+  };
+  if (type === 'consistency') body.groups = rawPatterns.map(g => g.split('|'));
+  else body.patterns = rawPatterns;
+  try {
+    const res = await fetch('/api/rules', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    toast(data.detail);
+    $('#r-id').value = ''; $('#r-patterns').value = ''; $('#r-message').value = '';
+    loadRules();
+  } catch (err) {
+    toast('新增失敗：' + err.message, 5000);
+  }
+});
+
+async function loadRules() {
+  try {
+    const data = await (await fetch('/api/rules')).json();
+    $('#rules-list').innerHTML = data.rules.map(r =>
+      `<li><code>${esc(r.id)}</code>［${esc(r.severity)}／${esc(r.type)}］ ` +
+      `${esc(r.name || r.message)} <span class="snippet">(${esc(r.source)})</span></li>`
+    ).join('');
+  } catch {}
+}
+$('#rules-details').addEventListener('toggle', e => { if (e.target.open) loadRules(); });
+
+refreshStats();
+</script>
+</body>
+</html>

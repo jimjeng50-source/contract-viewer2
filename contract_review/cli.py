@@ -1,60 +1,36 @@
-"""命令列介面：check（審查）、add-rule（新增規則）、list-rules（列出規則）。"""
+"""命令列介面：check（審查）、add-rule（新增規則）、list-rules（列出規則）、serve（網頁）。"""
 
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
-import yaml
-
-from .extract import extract_segments
+from .engine import DEFAULT_RULES_DIR, DOC_TYPES, review_file
+from .learning import DEFAULT_LEARNING_DIR
 from .report import has_errors, render_console, render_markdown
-from .rules import VALID_SEVERITIES, load_rules_for, run_rules, _parse_rule
-
-DEFAULT_RULES_DIR = Path(__file__).resolve().parent.parent / "rules"
-
-DOC_TYPES = {
-    "purchase_order": "訂購單合約",
-    "subcontract": "發包承攬契約",
-    "common": "一般契約（僅套用共用規則）",
-}
-
-# 依關鍵字自動判斷文件類型；承攬優先於訂購（承攬契約中也常出現「訂購」字樣）
-_DETECT_PATTERNS = [
-    ("subcontract", r"承攬|發包|工程契約"),
-    ("purchase_order", r"訂購單|訂購契約|採購"),
-]
-
-
-def detect_doc_type(full_text: str) -> str:
-    for doc_type, pattern in _DETECT_PATTERNS:
-        if re.search(pattern, full_text):
-            return doc_type
-    return "common"
+from .rules import VALID_SEVERITIES, append_rule, load_rules_for
 
 
 def cmd_check(args) -> int:
-    rules_dir = Path(args.rules)
     results = []
     exit_code = 0
     for file_arg in args.files:
         path = Path(file_arg)
         try:
-            segments = extract_segments(path)
+            result = review_file(
+                path, doc_type=args.type, rules_dir=args.rules,
+                learning_dir=args.learning,
+            )
         except Exception as e:  # noqa: BLE001
             print(f"◆ {path.name}：無法審查 — {e}", file=sys.stderr)
             exit_code = 2
             continue
-        full_text = "\n".join(seg.text for seg in segments)
-        doc_type = args.type if args.type != "auto" else detect_doc_type(full_text)
-        rules = load_rules_for(doc_type, rules_dir)
-        findings = run_rules(rules, segments)
-        label = DOC_TYPES.get(doc_type, doc_type)
-        print(render_console(path.name, label, findings))
-        results.append((path.name, label, findings))
-        if has_errors(findings):
+        print(render_console(result.file_name, result.doc_type_label, result.findings))
+        if result.suppressed_count:
+            print(f"  （另有 {result.suppressed_count} 項已學習的誤報被自動略過）")
+        results.append((result.file_name, result.doc_type_label, result.findings))
+        if has_errors(result.findings):
             exit_code = max(exit_code, 1)
     if args.output and results:
         report = render_markdown(results)
@@ -64,20 +40,6 @@ def cmd_check(args) -> int:
 
 
 def cmd_add_rule(args) -> int:
-    rules_file = Path(args.rules) / args.file
-    if rules_file.exists():
-        data = yaml.safe_load(rules_file.read_text(encoding="utf-8")) or {}
-    else:
-        data = {"doc_type": args.doc_type, "rules": []}
-    if data.get("doc_type", "common") != args.doc_type:
-        print(
-            f"錯誤：{rules_file} 的 doc_type 是「{data.get('doc_type')}」，"
-            f"與 --doc-type「{args.doc_type}」不符。請改用對應的規則檔。",
-            file=sys.stderr,
-        )
-        return 2
-    data.setdefault("rules", [])
-
     raw = {
         "id": args.id,
         "type": args.rule_type,
@@ -93,23 +55,11 @@ def cmd_add_rule(args) -> int:
         raw["groups"] = [g.split("|") for g in args.group]
     if args.check:
         raw["check"] = args.check
-
-    # 先驗證新規則本身，再掃描所有規則檔確認 id 不撞名（含跨文件類型）
-    _parse_rule(raw, rules_file)
-    all_ids = set()
-    for path in sorted(Path(args.rules).glob("*.y*ml")):
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        all_ids.update(r.get("id") for r in loaded.get("rules", []) or [])
-    if args.id in all_ids:
-        print(f"錯誤：規則 id「{args.id}」已存在，請換一個 id 或直接編輯既有規則。",
-              file=sys.stderr)
+    try:
+        rules_file = append_rule(args.rules, args.file, args.doc_type, raw)
+    except ValueError as e:
+        print(f"錯誤：{e}", file=sys.stderr)
         return 2
-
-    data["rules"].append(raw)
-    rules_file.write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False, width=100),
-        encoding="utf-8",
-    )
     print(f"已新增規則「{args.id}」到 {rules_file}")
     return 0
 
@@ -128,6 +78,15 @@ def cmd_list_rules(args) -> int:
     return 0
 
 
+def cmd_serve(args) -> int:
+    from .webapp import create_app
+
+    app = create_app(rules_dir=args.rules, learning_dir=args.learning)
+    print(f"合約審查網頁啟動：http://{args.host}:{args.port}/（Ctrl+C 停止）")
+    app.run(host=args.host, port=args.port, debug=False)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="review",
@@ -135,6 +94,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--rules", default=str(DEFAULT_RULES_DIR), help="規則目錄（預設：repo 內 rules/）"
+    )
+    parser.add_argument(
+        "--learning", default=str(DEFAULT_LEARNING_DIR),
+        help="學習資料目錄（預設：repo 內 learning/）",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -179,6 +142,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_list = sub.add_parser("list-rules", help="列出目前所有規則")
     p_list.set_defaults(func=cmd_list_rules)
+
+    p_serve = sub.add_parser("serve", help="啟動互動審查網頁")
+    p_serve.add_argument("--host", default="127.0.0.1", help="繫結位址（預設 127.0.0.1）")
+    p_serve.add_argument("--port", type=int, default=8000, help="埠號（預設 8000）")
+    p_serve.set_defaults(func=cmd_serve)
     return parser
 
 
