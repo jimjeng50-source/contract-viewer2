@@ -466,7 +466,7 @@ const BUILTIN_CHECKS = {
   blank_fields: checkBlankFields,
 };
 
-// ───────────────────────── 商務摘要擷取（與 Python 版 summary.py 對應） ─────────────────────────
+// ───────────────────────── 商務摘要判讀（與 Python 版 summary.py 對應） ─────────────────────────
 const NUM = '[0-9][0-9,]*(?:\\.[0-9]+)?';
 const CURRENCY_PATTERNS = [
   ['新臺幣', `(?:NT\\$|NTD|TWD|新[臺台]幣)\\s*(${NUM})`],
@@ -479,93 +479,277 @@ const CURRENCY_PATTERNS = [
 const RE_REV_CURRENCY = new RegExp(`(${NUM})\\s*(美元|美金|歐元|日圓|日幣|人民幣|英鎊)`, 'g');
 const RE_GENERIC_YUAN = new RegExp(`(${NUM})\\s*元`, 'g');
 const RE_CN_AMOUNT = new RegExp(`(?:新[臺台]幣)?\\s*([${CN_CHARS}]{3,})\\s*元`, 'g');
-const RE_ROC_DATE_S = /(?:中華)?民國\s*\d{1,3}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/g;
-const RE_AD_DATE_S = /(?:西元\s*)?(?:19|20)\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/g;
+const RE_ROC_DATE_S = /(?:中華)?民國\s*\d{1,3}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/;
+const RE_AD_DATE_S = /(?:西元\s*)?(?:19|20)\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/;
 const RE_INCOTERM = /\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP|DDU|DES|DEQ|C&F|CNF)\b/g;
-const RE_INCOTERM_VER = /Incoterms?\s*®?\s*(20\d{2}|19\d{2})/gi;
+const RE_INCOTERM_VER = /Incoterms?\s*®?\s*(20\d{2}|19\d{2})/i;
 const RE_PARTY_COLON = /(甲方|乙方|買方|賣方|定作人|承攬人)\s*[：:]\s*([^\s（(，。;；：]{2,30})/g;
 const RE_PARTY_ALIAS = /([^\s（(，。;；：]{2,30})\s*[（(]\s*以下簡稱\s*(甲方|乙方|買方|賣方|定作人|承攬人)\s*[)）]/g;
-const RE_DURATION = /[0-9０-９一二三四五六七八九十百]+\s*(?:個)?\s*(?:日|天|週|月|年)/;
-const SENTENCE_FIELDS = [
-  ['deadlines', '重要期限', true, /交貨|交期|完工|竣工|工期|到貨|交付期限|有效期/],
-  ['payment', '付款條件', true, /付款|支付|給付價金|價金給付|T\/T|L\/C|信用狀|電匯|月結|票期|[Nn]et\s*\d+/],
-  ['ld', '違約金（LD）', true, /違約金|逾期罰|懲罰性|賠償金|[Ll]iquidated\s+[Dd]amages?|\bLD\b/],
-  ['bond', '履約保證金', false, /履約保證|保證金/],
-  ['warranty', '保固', false, /保固|瑕疵擔保/],
+
+const CONTRACT_AMOUNT_KWS = [
+  [/契約總價|合約總價|契約金額|合約金額|訂購金額|採購金額|承攬報酬|承攬總價|工程總價|契約價金/, 3],
+  [/總價|總金額|總計|價金/, 2],
 ];
-const MAX_VALUES = 8, SNIPPET_LEN = 80;
+const RE_DEPOSIT = /定金|訂金|簽約金|頭期款/;
+const RE_BOND_KW = /履約保證|保證金/;
+const RE_LD_KW = /違約金|逾期罰|懲罰性|賠償金|[Ll]iquidated\s+[Dd]amages?|\bLD\b/;
+
+const CN_SMALL = {'零':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+const FRACTION = '(千分之|萬分之|百分之)\\s*([0-9]+(?:\\.[0-9]+)?|[零一二三四五六七八九十]+)';
+const RE_FRACTION = new RegExp(`${FRACTION}|([0-9]+(?:\\.[0-9]+)?)\\s*[%％]`);
+const RE_LD_PER = /每\s*逾?\s*([0-9一二三四五六七八九十]*)\s*(日|天|週|月)/;
+const RE_LD_BASE = new RegExp(`[按依]\\s*([^，。,]{2,14}?)\\s*之?\\s*(?=${FRACTION}|[0-9.]+\\s*[%％])`);
+const RE_LD_CAP = /(?:上限|最高|不得超過|以)([^，。,]{0,20}?)為限|(?:上限|最高|不得超過)([^，。,]{0,20})/;
+
+const RE_PAY_METHOD = /T\/T|TT電匯|L\/C|信用狀|電匯|匯款|即期支票|支票|現金|月結|票期/g;
+const RE_PAY_TIMING = /(簽約|驗收合格|驗收|交貨|到貨|請款|收到發票|發票開立|完工|每月|次月)[^，。,]{0,8}?([0-9０-９一二三四五六七八九十]+)\s*(?:個)?(日|天|月)內?/;
+const RE_INSTALLMENT = /分\s*([0-9一二三四五六七八九十]+)\s*期/;
+const RE_WARRANTY_DUR = /保固[^，。,]{0,12}?([0-9０-９一二三四五六七八九十]+)\s*(?:個)?(年|月|日|天)/;
+const RE_WARRANTY_START = /(驗收合格|驗收|交貨|到貨|完工|竣工|啟用)[^，。,]{0,6}?日?起/;
+const DEADLINE_KWS = [
+  ['交貨期限', /交貨|交期|到貨|交付/g],
+  ['完工期限', /完工|竣工|工期/g],
+  ['驗收期限', /驗收/g],
+];
+const RE_REL_DEADLINE = /(?:(簽約|訂約|開工|訂購|下單|到貨|交貨|驗收合格|驗收|收到訂單)後?)?\s*([0-9０-９一二三四五六七八九十]+)\s*(?:個)?(日|天|週|月)內/;
+const SNIPPET_LEN = 80;
 
 function overlaps(span, taken) { return taken.some(([s, e]) => s < span[1] && span[0] < e); }
 function trimSent(s) { return s.length <= SNIPPET_LEN ? s : s.slice(0, SNIPPET_LEN - 1) + '…'; }
 
+function cnSmallToInt(s) {
+  s = (s || '').trim();
+  if (!s) return null;
+  if (/^[0-9]+(?:\.[0-9]+)?$/.test(s)) return Math.floor(parseFloat(s));
+  if (s.includes('十')) {
+    const [head, tail] = s.split('十');
+    return (head ? (CN_SMALL[head] ?? 1) : 1) * 10 + (tail ? (CN_SMALL[tail] ?? 0) : 0);
+  }
+  return s.length === 1 && s in CN_SMALL ? CN_SMALL[s] : null;
+}
+
+function fractionPct(m) {
+  if (m[3]) return [m[0].trim(), parseFloat(m[3])];
+  const num = cnSmallToInt(m[2]);
+  if (num === null) return [m[0].trim(), null];
+  const denom = { '千分之': 10, '萬分之': 100, '百分之': 1 }[m[1]];
+  return [m[0].trim(), num / denom];
+}
+
+function amountsIn(text) {
+  const arabic = [], taken = [];
+  for (const [label, pattern] of CURRENCY_PATTERNS) {
+    for (const m of text.matchAll(new RegExp(pattern, 'g'))) {
+      arabic.push([[m.index, m.index + m[0].length], `${label} ${m[1]}`]);
+      taken.push([m.index, m.index + m[0].length]);
+    }
+  }
+  for (const m of text.matchAll(RE_REV_CURRENCY)) {
+    const span = [m.index, m.index + m[0].length];
+    if (!overlaps(span, taken)) { arabic.push([span, `${m[2]} ${m[1]}`]); taken.push(span); }
+  }
+  for (const m of text.matchAll(RE_GENERIC_YUAN)) {
+    const span = [m.index, m.index + m[0].length];
+    if (!overlaps(span, taken)) { arabic.push([span, `${m[1]} 元`]); taken.push(span); }
+  }
+  const cn = [];
+  for (const m of text.matchAll(RE_CN_AMOUNT)) {
+    cn.push([[m.index, m.index + m[0].length], m[1], cnAmountToInt(m[1])]);
+  }
+  const hits = [], usedCn = new Set();
+  arabic.sort((a, b) => a[0][0] - b[0][0]);
+  for (let [span, rendered] of arabic) {
+    let note = '';
+    for (let i = 0; i < cn.length; i++) {
+      if (usedCn.has(i)) continue;
+      const [cspan, ctext, cval] = cn[i];
+      const gap = Math.min(Math.abs(span[0] - cspan[1]), Math.abs(cspan[0] - span[1]));
+      if (gap <= 8) {
+        usedCn.add(i);
+        const digits = Math.floor(parseFloat(rendered.split(' ').pop().replace(/,/g, '')));
+        const mark = digits === cval ? '' : '，兩者不一致⚠';
+        note = `（大寫 ${ctext}元＝${cval.toLocaleString()}${mark}）`;
+        span = [Math.min(span[0], cspan[0]), Math.max(span[1], cspan[1])];
+        break;
+      }
+    }
+    hits.push({ rendered: rendered + note, span });
+  }
+  for (let i = 0; i < cn.length; i++) {
+    if (!usedCn.has(i)) {
+      const [cspan, ctext, cval] = cn[i];
+      hits.push({ rendered: `大寫 ${ctext}元（＝${cval.toLocaleString()}）`, span: cspan });
+    }
+  }
+  hits.sort((a, b) => a.span[0] - b.span[0]);
+  return hits;
+}
+
+function parseLd(sent) {
+  const rate = sent.match(RE_FRACTION);
+  const parts = [];
+  if (rate) {
+    const [rateText, pct] = fractionPct(rate);
+    const per = sent.match(RE_LD_PER);
+    const base = sent.match(RE_LD_BASE);
+    const perText = per ? `每${per[1] || '一'}${per[2]}` : '每期';
+    const baseText = base ? base[1].trim() : '（計罰基準未明⚠）';
+    const pctText = pct !== null ? `（≈${pct}％${per ? '／' + per[2] : ''}）` : '';
+    parts.push(`${perText}按 ${baseText} 計 ${rateText}${pctText}`);
+  } else {
+    const hits = amountsIn(sent);
+    if (!hits.length) return null;
+    parts.push('定額：' + hits.slice(0, 2).map(h => h.rendered).join('、'));
+  }
+  let cap = null;
+  const m = sent.match(RE_LD_CAP);
+  if (m) {
+    const window = m[1] || m[2] || '';
+    const capRate = window.match(RE_FRACTION);
+    if (capRate) {
+      const [capText, capPct] = fractionPct(capRate);
+      cap = capText + (capPct !== null ? `（≈${capPct}％）` : '');
+    } else if (window.trim()) cap = window.trim();
+  }
+  parts.push(cap ? `上限：${cap}` : '上限：未見約定⚠');
+  return parts.join('；');
+}
+
+function parsePayment(sent) {
+  const timing = sent.match(RE_PAY_TIMING);
+  const methods = [...new Set(sent.match(RE_PAY_METHOD) || [])].sort();
+  const installment = sent.match(RE_INSTALLMENT);
+  const parts = [];
+  if (timing) parts.push(`${timing[1]}後 ${timing[2]} ${timing[3]}內`);
+  if (installment) parts.push(`分 ${installment[1]} 期`);
+  if (methods.length) parts.push('方式：' + methods.join('、'));
+  return parts.length ? parts.join('，') : null;
+}
+
+function parseWarranty(sent) {
+  const dur = sent.match(RE_WARRANTY_DUR);
+  if (!dur) return null;
+  const start = sent.match(RE_WARRANTY_START);
+  return `${dur[1]} ${dur[2]}${start ? `（自${start[1]}日起算）` : ''}`;
+}
+
 function extractSummary(segments) {
   const mkField = (id, label, critical) => ({ id, label, critical, values: [] });
-  const add = (fld, text, location) => {
+  const add = (fld, text, location, limit = 8) => {
     text = text.trim();
-    if (!text || fld.values.length >= MAX_VALUES) return;
+    if (!text || fld.values.length >= limit) return;
     if (fld.values.some(v => v.text === text)) return;
     fld.values.push({ text, location });
   };
   const parties = mkField('parties', '當事人', false);
-  const amounts = mkField('amounts', '幣別金額', true);
-  const dates = mkField('dates', '日期', true);
+  const contractAmount = mkField('contract_amount', '合約金額', true);
+  const otherAmounts = mkField('other_amounts', '其他金額', false);
+  const signDate = mkField('sign_date', '簽約日期', true);
+  const deadlines = mkField('deadlines', '交貨／完工期限', true);
+  const payment = mkField('payment', '付款條件', true);
   const incoterm = mkField('incoterm', '貿易條件（Incoterms）', false);
-  const sf = Object.fromEntries(
-    SENTENCE_FIELDS.map(([id, label, critical]) => [id, mkField(id, label, critical)]));
+  const ld = mkField('ld', '違約金（LD）', true);
+  const bond = mkField('bond', '履約保證金', false);
+  const warranty = mkField('warranty', '保固', false);
 
   for (const seg of segments) {
     for (const m of seg.text.matchAll(RE_PARTY_COLON)) add(parties, `${m[1]}：${m[2]}`, seg.location);
     for (const m of seg.text.matchAll(RE_PARTY_ALIAS)) add(parties, `${m[2]}：${m[1]}`, seg.location);
-
-    const taken = [];
-    for (const [label, pattern] of CURRENCY_PATTERNS) {
-      for (const m of seg.text.matchAll(new RegExp(pattern, 'g'))) {
-        taken.push([m.index, m.index + m[0].length]);
-        add(amounts, `${label} ${m[1]}`, seg.location);
-      }
-    }
-    for (const m of seg.text.matchAll(RE_REV_CURRENCY)) {
-      const span = [m.index, m.index + m[0].length];
-      if (!overlaps(span, taken)) { taken.push(span); add(amounts, `${m[2]} ${m[1]}`, seg.location); }
-    }
-    for (const m of seg.text.matchAll(RE_CN_AMOUNT)) {
-      taken.push([m.index, m.index + m[0].length]);
-      add(amounts, `大寫 ${m[1]}元（＝${cnAmountToInt(m[1]).toLocaleString()}）`, seg.location);
-    }
-    for (const m of seg.text.matchAll(RE_GENERIC_YUAN)) {
-      if (!overlaps([m.index, m.index + m[0].length], taken)) {
-        add(amounts, `${m[1]} 元（未標幣別）`, seg.location);
-      }
-    }
-
-    const spans = [];
-    for (const m of seg.text.matchAll(RE_ROC_DATE_S)) {
-      spans.push([m.index, m.index + m[0].length]);
-      add(dates, m[0], seg.location);
-    }
-    for (const m of seg.text.matchAll(RE_AD_DATE_S)) {
-      if (!overlaps([m.index, m.index + m[0].length], spans)) add(dates, m[0], seg.location);
-    }
-
     for (const m of seg.text.matchAll(RE_INCOTERM)) {
       add(incoterm, seg.text.slice(m.index, m.index + m[0].length + 24).trim(), seg.location);
     }
-    for (const m of seg.text.matchAll(RE_INCOTERM_VER)) add(incoterm, m[0], seg.location);
+    const ver = seg.text.match(RE_INCOTERM_VER);
+    if (ver) add(incoterm, ver[0], seg.location);
+    const dateM = seg.text.match(RE_ROC_DATE_S) || seg.text.match(RE_AD_DATE_S);
+    if (dateM) {
+      const stripped = seg.text.replace(/[　 ]/g, '');
+      if (stripped === dateM[0].replace(/ /g, '') || /簽約|簽訂|立約|訂約/.test(seg.text)) {
+        add(signDate, dateM[0], seg.location, 2);
+      }
+    }
   }
 
+  const contractCandidates = [];
+  let order = 0;
   for (const seg of segments) {
     for (const sent0 of seg.text.split(/[。；;]/)) {
       const sent = sent0.trim();
       if (!sent) continue;
-      for (const [id, , , keywords] of SENTENCE_FIELDS) {
-        if (!keywords.test(sent)) continue;
-        if (id === 'deadlines' && !(RE_DURATION.test(sent) ||
-            /民國\s*\d{1,3}\s*年/.test(sent) || /(?:19|20)\d{2}\s*年/.test(sent))) continue;
-        add(sf[id], trimSent(sent), seg.location);
+      order++;
+      const hits = amountsIn(sent);
+      const isLd = RE_LD_KW.test(sent);
+      const isBond = RE_BOND_KW.test(sent);
+      const isDeposit = RE_DEPOSIT.test(sent);
+
+      if (hits.length && !isLd) {
+        const rendered = hits.slice(0, 3).map(h => h.rendered).join('、');
+        let score = 0;
+        for (const [pattern, s] of CONTRACT_AMOUNT_KWS) {
+          if (pattern.test(sent)) score = Math.max(score, s);
+        }
+        if (isDeposit) add(otherAmounts, `定金：${rendered}`, seg.location);
+        else if (isBond) add(otherAmounts, `履約保證金：${rendered}`, seg.location);
+        else if (score) contractCandidates.push([-score, order, rendered, seg.location]);
+        else add(otherAmounts, `其他：${rendered}`, seg.location);
+      }
+
+      if (isLd) {
+        const parsed = parseLd(sent);
+        if (parsed) {
+          add(ld, parsed, seg.location);
+          add(ld, `原文：${trimSent(sent)}`, seg.location);
+        } else add(ld, trimSent(sent), seg.location);
+      }
+
+      if (isBond) {
+        const pct = sent.match(RE_FRACTION);
+        if (pct && !hits.length) {
+          const [text, value] = fractionPct(pct);
+          add(bond, text + (value !== null ? `（≈${value}％）` : ''), seg.location);
+        } else if (hits.length) {
+          add(bond, hits.slice(0, 2).map(h => h.rendered).join('、'), seg.location);
+        } else add(bond, trimSent(sent), seg.location);
+      }
+
+      if (/付款|支付|給付價金|價金給付|T\/T|L\/C|信用狀|電匯|月結|票期/.test(sent)) {
+        add(payment, parsePayment(sent) || trimSent(sent), seg.location);
+      }
+
+      if (/保固|瑕疵擔保/.test(sent)) {
+        const parsed = parseWarranty(sent);
+        if (parsed) add(warranty, parsed, seg.location);
+      }
+
+      // 期限分類取「最後命中」關鍵字；付款句不進期限欄
+      if (!isLd && !/付款|支付|給付/.test(sent)) {
+        let bestLabel = null, bestPos = -1;
+        for (const [label, kws] of DEADLINE_KWS) {
+          for (const m of sent.matchAll(kws)) {
+            if (m.index > bestPos) { bestLabel = label; bestPos = m.index; }
+          }
+        }
+        if (bestLabel) {
+          const dateM = sent.match(RE_ROC_DATE_S) || sent.match(RE_AD_DATE_S);
+          const rel = sent.match(RE_REL_DEADLINE);
+          if (dateM) add(deadlines, `${bestLabel}：${dateM[0]} 前`, seg.location);
+          else if (rel) {
+            add(deadlines, `${bestLabel}：${rel[1] ? rel[1] + '後 ' : ''}${rel[2]} ${rel[3]}內`, seg.location);
+          }
+        }
       }
     }
   }
-  return [parties, amounts, dates, sf.deadlines, sf.payment, incoterm, sf.ld, sf.bond, sf.warranty];
+
+  if (contractCandidates.length) {
+    contractCandidates.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
+    add(contractAmount, contractCandidates[0][2], contractCandidates[0][3]);
+    for (const [, , rendered, location] of contractCandidates.slice(1)) {
+      add(otherAmounts, `其他：${rendered}`, location);
+    }
+  }
+
+  return [parties, contractAmount, otherAmounts, signDate, deadlines,
+          payment, incoterm, ld, bond, warranty];
 }
 
 function bizSummary(summary) {
