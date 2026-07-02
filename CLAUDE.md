@@ -1,6 +1,10 @@
 # contract-viewer2 — 合約自動審查工具
 
-Word（.docx）／PDF 訂購單合約與發包承攬契約的自動勘誤工具。純 Python，規則以 YAML 維護。
+Word（.docx）／PDF 訂購單合約與發包承攬契約的自動勘誤工具。規則以 YAML 維護。
+
+**開發主線（2026-07 起）：只開發單機版**（`templates/standalone.html` ＋ `build_standalone.py` → `dist/`）。
+伺服器網頁（webapp.py）與 CLI 凍結維持現狀：保持能動、修壞掉的東西，但**新功能一律只做在單機版 JS，不再回寫 Python 側**。
+單機版新功能的驗證方式：Playwright 對 `dist/` 產物做瀏覽器端到端測試（非 ASCII 檔名的環境坑見 lessons）。
 
 ## 常用指令
 
@@ -25,8 +29,8 @@ python samples/make_samples.py           # 重新產生範例合約
 - `contract_review/summary.py`：商務摘要擷取（幣別金額、日期、LD、Incoterms…）
 - `contract_review/engine.py`：CLI 與網頁共用的審查流程（抽取→摘要→規則→學習過濾）
 - `contract_review/learning.py`：自動學習（誤報抑制、關鍵字寫回規則、回饋統計）
-- `contract_review/webapp.py` ＋ `templates/index.html`：Flask 互動網頁
-- `templates/standalone.html` ＋ `build_standalone.py`：單機離線版（引擎為 JS 移植，改 Python 檢查邏輯時要同步改這裡並重打包 dist/）
+- `templates/standalone.html` ＋ `build_standalone.py`：**單機離線版（開發主線）**；引擎為 JS 實作，改完要重打包 dist/
+- `contract_review/webapp.py` ＋ `templates/index.html`：Flask 互動網頁（凍結，不加新功能）
 - `rules/*.yaml`：規則檔；`doc_type: common` 套用到所有文件
 - `contract_review/reviewlog.py`：審查紀錄（每份合約審查留檔可查）
 - `learning/`：機器學習資料（suppressions.yaml／feedback.jsonl）與審查紀錄（review_log.jsonl），勿手動與 lessons 混用
@@ -38,5 +42,5 @@ python samples/make_samples.py           # 重新產生範例合約
 2. **有教訓就記**：修正過的錯誤、被驗證確認的做法，依 `lessons/README.md` 的規範記錄（一檔一教訓、首行摘要、要寫為什麼重要）。
 3. **不重複**：已在程式碼、規則檔或既有 lesson 中的內容不再存一份；同主題更新既有 lesson 而非開新檔；結論錯誤的 lesson 直接刪除或改寫。
 4. **規則優先於筆記**：能寫成 `rules/*.yaml` 規則的教訓就落地成規則。
-5. **改規則或檢查邏輯後**：跑 `python -m unittest discover tests`，並用 `samples/` 兩份範例合約驗證預期的錯誤仍抓得到、沒有新誤報。
+5. **改規則或檢查邏輯後**：規則檔（rules/*.yaml）兩邊共用，改完跑 `python -m unittest discover tests` 確認沒弄壞既有 Python 側，重打包 dist/ 並用 Playwright 拿 `samples/` 兩份範例合約驗證單機版預期的錯誤仍抓得到、沒有新誤報。單機版專屬的 JS 邏輯只用瀏覽器測試驗證。
 6. **自主完成**：只有不可逆動作、範圍實質變更、或只有使用者能提供的資訊才暫停詢問，其餘做完再回報。

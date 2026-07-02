@@ -10,7 +10,7 @@ pip install -r requirements.txt
 
 需要 Python 3.10+。
 
-## 單機版 HTML（免安裝）
+## 單機版 HTML（免安裝，開發主線）
 
 `dist/合約審查_單機版.html` 是一個完全自足的離線網頁：下載這一個檔案，雙擊用瀏覽器開啟即可拖放審查 .docx／.pdf，不需要 Python、不需要伺服器、不需要網路，合約內容不會離開你的電腦。
 
@@ -22,7 +22,7 @@ pip install -r requirements.txt
 python build_standalone.py    # 需要 node/npm（自動下載前端函式庫）→ dist/合約審查_單機版.html
 ```
 
-## 互動網頁（伺服器版）
+## 互動網頁（伺服器版；凍結維護，新功能只做單機版）
 
 ```bash
 python review.py serve            # 啟動後開 http://127.0.0.1:8000/
