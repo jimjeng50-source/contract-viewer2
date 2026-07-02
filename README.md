@@ -107,6 +107,21 @@ python review.py add-rule --id custom-project-term --rule-type consistency \
 
 也可以直接編輯 YAML，格式見 `rules/common.yaml` 內註解。`python review.py list-rules` 檢視現行全部規則。
 
+## 審查紀錄（log）
+
+每份審查過的合約自動記一筆紀錄：審查時間、檔名、文件類型、結果統計、商務摘要（合約金額、簽約日期、期限、LD…），可依關鍵字（含摘要內容）與日期區間查詢「哪一天審過哪些合約」。
+
+- **單機版**：「審查紀錄查詢」面板查詢＋匯出 CSV（Excel 可直接開）；紀錄存瀏覽器 localStorage（最多 1000 筆），也包含在學習資料的匯出／匯入中。
+- **伺服器版網頁**：同樣的查詢面板；紀錄存 `learning/review_log.jsonl`。
+- **CLI**：
+
+```bash
+python review.py log                          # 全部紀錄（新到舊）
+python review.py log --keyword 大甲精機       # 關鍵字（檔名或摘要內容，如廠商名）
+python review.py log --from 2026-07-01 --to 2026-07-31 -v   # 日期區間＋完整摘要
+python review.py check 合約.docx --no-log     # 這次審查不記錄
+```
+
 ## 記憶系統
 
 - `learning/`：機器自動學習資料——誤報抑制清單（`suppressions.yaml`）與回饋流水帳（`feedback.jsonl`），由網頁回饋按鈕自動維護。

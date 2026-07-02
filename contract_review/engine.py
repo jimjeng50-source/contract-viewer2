@@ -49,7 +49,13 @@ def review_file(
     doc_type: str = "auto",
     rules_dir: str | Path = DEFAULT_RULES_DIR,
     learning_dir: str | Path = DEFAULT_LEARNING_DIR,
+    record: bool = True,
+    file_name: str = "",
 ) -> ReviewResult:
+    """審查一份合約。record=True 時寫入審查紀錄（learning/review_log.jsonl）。
+
+    file_name：紀錄用的顯示檔名（網頁上傳存暫存檔時傳原始檔名）。
+    """
     path = Path(path)
     segments = extract_segments(path)
     if doc_type == "auto":
@@ -58,11 +64,16 @@ def review_file(
     rules = load_rules_for(doc_type, rules_dir)
     findings = run_rules(rules, segments)
     findings, suppressed = apply_suppressions(findings, Path(learning_dir))
-    return ReviewResult(
-        file_name=path.name,
+    result = ReviewResult(
+        file_name=file_name or path.name,
         doc_type=doc_type,
         doc_type_label=DOC_TYPES.get(doc_type, doc_type),
         findings=findings,
         suppressed_count=suppressed,
         summary=extract_summary(segments),
     )
+    if record:
+        from .reviewlog import record_review
+
+        record_review(result, Path(learning_dir))
+    return result

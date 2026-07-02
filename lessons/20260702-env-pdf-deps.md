@@ -5,12 +5,14 @@
 1. pdfplumber 首跑因 `_cffi_backend` 缺失炸掉（debian 版 cryptography 不完整）；安裝 flask 時 debian 版 blinker 因 RECORD 檔缺失無法解除安裝。
 2. `soffice --headless --convert-to pdf` 對任何檔案（含純 txt）都回 "source file could not be loaded"，是安裝不完整，不是檔案問題。
 3. Playwright 的 `setInputFiles` 給中文檔名路徑時不觸發 change 事件也不報錯，看起來像網頁 bug，其實是容器內 Chromium/CDP 的怪癖——curl 用中文檔名打 API 完全正常。
+4. 同一環境的 Chromium 對 `<a download="中文名.csv">` 會忽略檔名、存成「download」；ASCII 檔名正常。
 
 ## 做法
 
 1. `pip install cffi` 修 pdfplumber；`pip install --ignore-installed blinker flask` 繞過壞損的 debian 套件。
 2. 需要產生中文測試 PDF 用 reportlab 的 `UnicodeCIDFont('STSong-Light')`，不要浪費時間修 LibreOffice。
 3. 瀏覽器 e2e 測試上傳檔案時，先把檔案複製成 ASCII 檔名再 `setInputFiles`。
+4. 網頁提供下載的檔案（CSV/JSON/YAML）一律用 ASCII 檔名。
 
 ## 為什麼重要
 

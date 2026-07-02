@@ -20,7 +20,7 @@ def cmd_check(args) -> int:
         try:
             result = review_file(
                 path, doc_type=args.type, rules_dir=args.rules,
-                learning_dir=args.learning,
+                learning_dir=args.learning, record=not args.no_log,
             )
         except Exception as e:  # noqa: BLE001
             print(f"◆ {path.name}：無法審查 — {e}", file=sys.stderr)
@@ -78,6 +78,33 @@ def cmd_list_rules(args) -> int:
     return 0
 
 
+def cmd_log(args) -> int:
+    from .reviewlog import query_log
+
+    entries = query_log(
+        Path(args.learning), keyword=args.keyword,
+        date_from=getattr(args, "from"), date_to=args.to, limit=args.limit,
+    )
+    if not entries:
+        print("沒有符合條件的審查紀錄。")
+        return 0
+    print(f"共 {len(entries)} 筆（新到舊）：\n")
+    for e in entries:
+        counts = e.get("counts", {})
+        print(f"◆ {e['time']}　{e['file']}（{e.get('doc_type_label', '')}）"
+              f"　錯誤 {counts.get('error', 0)}、警告 {counts.get('warning', 0)}、"
+              f"提示 {counts.get('info', 0)}")
+        summary = e.get("summary", {})
+        for label in ("合約金額", "簽約日期", "交貨／完工期限", "違約金（LD）"):
+            if label in summary:
+                print(f"    {label}：{'；'.join(summary[label])}")
+        if args.verbose:
+            for label, values in summary.items():
+                if label not in ("合約金額", "簽約日期", "交貨／完工期限", "違約金（LD）"):
+                    print(f"    {label}：{'；'.join(values)}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .webapp import create_app
 
@@ -108,7 +135,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="文件類型（預設 auto 依內文關鍵字判斷）",
     )
     p_check.add_argument("-o", "--output", help="將 Markdown 報告寫入此檔案")
+    p_check.add_argument("--no-log", action="store_true", help="這次審查不寫入審查紀錄")
     p_check.set_defaults(func=cmd_check)
+
+    p_log = sub.add_parser("log", help="查詢審查紀錄（哪天審過哪些合約）")
+    p_log.add_argument("--keyword", default="", help="關鍵字（比對檔名與摘要內容）")
+    p_log.add_argument("--from", default="", help="起始日期 YYYY-MM-DD")
+    p_log.add_argument("--to", default="", help="結束日期 YYYY-MM-DD")
+    p_log.add_argument("--limit", type=int, default=50, help="最多顯示筆數（預設 50）")
+    p_log.add_argument("-v", "--verbose", action="store_true", help="顯示完整商務摘要")
+    p_log.set_defaults(func=cmd_log)
 
     p_add = sub.add_parser("add-rule", help="新增一條審查規則到規則檔")
     p_add.add_argument("--id", required=True, help="規則唯一識別碼，例如 po-warranty")

@@ -145,6 +145,19 @@
       <ul id="rules-list"></ul>
     </details>
   </div>
+
+  <div class="card">
+    <details id="log-details">
+      <summary>審查紀錄查詢</summary>
+      <div class="controls" style="margin-top:12px">
+        <input type="text" id="log-q" placeholder="關鍵字（檔名／摘要內容）">
+        <label>從 <input type="date" id="log-from"></label>
+        <label>到 <input type="date" id="log-to"></label>
+        <button class="primary" id="log-search">查詢</button>
+      </div>
+      <div id="log-result" style="margin-top:12px"></div>
+    </details>
+  </div>
 </div>
 <div id="toast"></div>
 
@@ -322,6 +335,44 @@ async function loadRules() {
   } catch {}
 }
 $('#rules-details').addEventListener('toggle', e => { if (e.target.open) loadRules(); });
+
+// ── 審查紀錄查詢 ──
+function renderLogEntries(entries) {
+  if (!entries.length) return '<p class="stats">沒有符合條件的審查紀錄。</p>';
+  let html = `<table><tr><th>審查時間</th><th>檔名</th><th>類型</th><th>結果</th>
+    <th>合約金額</th><th>簽約日期</th></tr>`;
+  for (const e of entries) {
+    const s = e.summary || {}, c = e.counts || {};
+    const amount = (s['合約金額'] || []).join('；') || '—';
+    const sign = (s['簽約日期'] || []).join('；') || '—';
+    const detail = Object.entries(s).map(([k, v]) =>
+      `<div><b>${esc(k)}</b>：${esc(v.join('；'))}</div>`).join('');
+    html += `<tr class="log-row" style="cursor:pointer" title="點一下展開完整摘要">
+      <td class="loc">${esc(e.time)}</td><td>${esc(e.file)}</td>
+      <td class="loc">${esc(e.doc_type_label || '')}</td>
+      <td class="loc">錯 ${c.error ?? 0}／警 ${c.warning ?? 0}</td>
+      <td>${esc(amount)}</td><td class="loc">${esc(sign)}</td></tr>
+      <tr class="log-detail" hidden><td colspan="6" class="snippet">${detail || '（無摘要）'}</td></tr>`;
+  }
+  return html + '</table>';
+}
+
+async function loadLog() {
+  const params = new URLSearchParams({
+    q: $('#log-q').value.trim(), from: $('#log-from').value, to: $('#log-to').value,
+  });
+  try {
+    const data = await (await fetch('/api/log?' + params)).json();
+    $('#log-result').innerHTML = renderLogEntries(data.entries);
+  } catch (err) { toast('查詢失敗：' + err.message); }
+}
+$('#log-search').addEventListener('click', loadLog);
+$('#log-q').addEventListener('keydown', e => { if (e.key === 'Enter') loadLog(); });
+$('#log-details').addEventListener('toggle', e => { if (e.target.open) loadLog(); });
+$('#log-result').addEventListener('click', e => {
+  const row = e.target.closest('.log-row');
+  if (row) row.nextElementSibling.hidden = !row.nextElementSibling.hidden;
+});
 
 refreshStats();
 </script>

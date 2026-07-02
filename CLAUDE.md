@@ -12,6 +12,7 @@ python review.py serve                   # 互動網頁 http://127.0.0.1:8000/
 python build_standalone.py               # 打包單機版 HTML（rules/ 變更後要重打包）
 python review.py add-rule ...            # 新增規則（見 README.md）
 python review.py list-rules              # 列出所有規則
+python review.py log --keyword X         # 查審查紀錄（哪天審過哪些合約）
 python -m unittest discover tests        # 跑測試
 python samples/make_samples.py           # 重新產生範例合約
 ```
@@ -27,7 +28,8 @@ python samples/make_samples.py           # 重新產生範例合約
 - `contract_review/webapp.py` ＋ `templates/index.html`：Flask 互動網頁
 - `templates/standalone.html` ＋ `build_standalone.py`：單機離線版（引擎為 JS 移植，改 Python 檢查邏輯時要同步改這裡並重打包 dist/）
 - `rules/*.yaml`：規則檔；`doc_type: common` 套用到所有文件
-- `learning/`：機器學習資料（suppressions.yaml／feedback.jsonl），勿手動與 lessons 混用
+- `contract_review/reviewlog.py`：審查紀錄（每份合約審查留檔可查）
+- `learning/`：機器學習資料（suppressions.yaml／feedback.jsonl）與審查紀錄（review_log.jsonl），勿手動與 lessons 混用
 - `samples/`：含刻意錯誤的範例合約與產生器
 
 ## 工作守則（對 AI 助手）

@@ -57,6 +57,7 @@ def create_app(
                     result = review_file(
                         tmp.name, doc_type=doc_type,
                         rules_dir=rules_dir, learning_dir=learning_dir,
+                        file_name=name,
                     )
                 except Exception as e:  # noqa: BLE001
                     results.append({"file": name, "error": str(e)})
@@ -173,5 +174,18 @@ def create_app(
     @app.get("/api/stats")
     def api_stats():
         return jsonify(learning_stats(learning_dir))
+
+    @app.get("/api/log")
+    def api_log():
+        from .reviewlog import query_log
+
+        entries = query_log(
+            learning_dir,
+            keyword=request.args.get("q", "").strip(),
+            date_from=request.args.get("from", "").strip(),
+            date_to=request.args.get("to", "").strip(),
+            limit=min(int(request.args.get("limit", 100)), 500),
+        )
+        return jsonify({"entries": entries})
 
     return app

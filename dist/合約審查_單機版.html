@@ -149,6 +149,20 @@
   </div>
 
   <div class="card">
+    <details id="log-details">
+      <summary>審查紀錄查詢</summary>
+      <div class="controls" style="margin-top:12px">
+        <input type="text" id="log-q" placeholder="關鍵字（檔名／摘要內容）">
+        <label>從 <input type="date" id="log-from"></label>
+        <label>到 <input type="date" id="log-to"></label>
+        <button class="primary" id="log-search">查詢</button>
+        <button id="log-csv">匯出 CSV</button>
+      </div>
+      <div id="log-result" style="margin-top:12px"></div>
+    </details>
+  </div>
+
+  <div class="card">
     <details>
       <summary>學習資料管理</summary>
       <div class="toolbar" style="margin-top:12px">
@@ -297,7 +311,41 @@ function recordFeedback(verdict, finding, fileName, extendPattern) {
 function refreshStats() {
   $('#stats').textContent =
     `已學習誤報 ${getSuppressions().length} 條．累計回饋 ${getFeedback().length} 筆` +
-    `．自訂規則 ${getCustomRules().length} 條`;
+    `．自訂規則 ${getCustomRules().length} 條．審查紀錄 ${getReviewLog().length} 筆`;
+}
+
+// ── 審查紀錄（localStorage，最多保留 1000 筆） ──
+function getReviewLog() { return store.get('reviewLog', []); }
+
+function recordLogEntry(fileName, r) {
+  const counts = { error: 0, warning: 0, info: 0 };
+  r.findings.forEach(f => counts[f.severity]++);
+  const summary = {};
+  for (const fld of r.summary) {
+    if (fld.values.length) summary[fld.label] = fld.values.slice(0, 3).map(v => v.text);
+  }
+  const log = getReviewLog();
+  log.push({
+    time: new Date().toLocaleString('sv-SE'),  // YYYY-MM-DD HH:mm:ss（本地時間）
+    file: fileName, doc_type: r.docType, doc_type_label: DOC_TYPES[r.docType],
+    counts, suppressed: r.suppressed, summary,
+  });
+  while (log.length > 1000) log.shift();
+  store.set('reviewLog', log);
+}
+
+function queryReviewLog(keyword, from, to) {
+  // 依時間新到舊（匯入合併後順序可能交錯，故排序而非單純反轉）
+  return getReviewLog().slice().sort((a, b) => (a.time < b.time ? 1 : -1)).filter(e => {
+    const day = (e.time || '').slice(0, 10);
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    if (keyword) {
+      const hay = e.file + (e.doc_type_label || '') + JSON.stringify(e.summary || {});
+      if (!hay.includes(keyword)) return false;
+    }
+    return true;
+  });
 }
 
 // ───────────────────────── 文字抽取 ─────────────────────────
@@ -874,6 +922,8 @@ async function review(files) {
     card.className = 'card file-card';
     try {
       const r = await reviewFile(file, docTypeChoice);
+      recordLogEntry(file.name, r);
+      refreshStats();
       const counts = { error: 0, warning: 0, info: 0 };
       r.findings.forEach(f => counts[f.severity]++);
       let html = `<h2>${esc(file.name)}</h2>
@@ -971,6 +1021,54 @@ function loadRules() {
 }
 $('#rules-details').addEventListener('toggle', e => { if (e.target.open) loadRules(); });
 
+// ───────────────────────── 審查紀錄查詢 UI ─────────────────────────
+function renderLogEntries(entries) {
+  if (!entries.length) return '<p class="stats">沒有符合條件的審查紀錄。</p>';
+  let html = `<table><tr><th>審查時間</th><th>檔名</th><th>類型</th><th>結果</th>
+    <th>合約金額</th><th>簽約日期</th></tr>`;
+  for (const e of entries) {
+    const s = e.summary || {}, c = e.counts || {};
+    const amount = (s['合約金額'] || []).join('；') || '—';
+    const sign = (s['簽約日期'] || []).join('；') || '—';
+    const detail = Object.entries(s).map(([k, v]) =>
+      `<div><b>${esc(k)}</b>：${esc(v.join('；'))}</div>`).join('');
+    html += `<tr class="log-row" style="cursor:pointer" title="點一下展開完整摘要">
+      <td class="loc">${esc(e.time)}</td><td>${esc(e.file)}</td>
+      <td class="loc">${esc(e.doc_type_label || '')}</td>
+      <td class="loc">錯 ${c.error ?? 0}／警 ${c.warning ?? 0}</td>
+      <td>${esc(amount)}</td><td class="loc">${esc(sign)}</td></tr>
+      <tr class="log-detail" hidden><td colspan="6" class="snippet">${detail || '（無摘要）'}</td></tr>`;
+  }
+  return html + '</table>';
+}
+
+function loadLog() {
+  $('#log-result').innerHTML = renderLogEntries(
+    queryReviewLog($('#log-q').value.trim(), $('#log-from').value, $('#log-to').value)
+      .slice(0, 200));
+}
+$('#log-search').addEventListener('click', loadLog);
+$('#log-q').addEventListener('keydown', e => { if (e.key === 'Enter') loadLog(); });
+$('#log-details').addEventListener('toggle', e => { if (e.target.open) loadLog(); });
+$('#log-result').addEventListener('click', e => {
+  const row = e.target.closest('.log-row');
+  if (row) row.nextElementSibling.hidden = !row.nextElementSibling.hidden;
+});
+$('#log-csv').addEventListener('click', () => {
+  const entries = queryReviewLog($('#log-q').value.trim(), $('#log-from').value, $('#log-to').value);
+  if (!entries.length) return toast('沒有可匯出的紀錄。');
+  const cols = ['合約金額', '簽約日期', '交貨／完工期限', '付款條件', '違約金（LD）', '貿易條件（Incoterms）'];
+  const q = v => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [['審查時間', '檔名', '類型', '錯誤', '警告', '提示', ...cols].map(q).join(',')];
+  for (const e of entries) {
+    const s = e.summary || {}, c = e.counts || {};
+    lines.push([e.time, e.file, e.doc_type_label || '', c.error ?? 0, c.warning ?? 0,
+      c.info ?? 0, ...cols.map(k => (s[k] || []).join('；'))].map(q).join(','));
+  }
+  // 檔名用 ASCII：部分瀏覽器對非 ASCII 的 download 檔名會退化成「download」
+  download('review-log.csv', '﻿' + lines.join('\r\n'), 'text/csv');  // 前綴 BOM 讓 Excel 正確識別 UTF-8
+});
+
 // ───────────────────────── 學習資料匯出／匯入 ─────────────────────────
 function download(name, text, mime) {
   const a = document.createElement('a');
@@ -985,6 +1083,7 @@ $('#export-learning').addEventListener('click', () => {
     exported: new Date().toISOString(),
     suppressions: getSuppressions(), feedback: getFeedback(),
     customRules: getCustomRules(), patternExtensions: getExtensions(),
+    reviewLog: getReviewLog(),
   }, null, 2), 'application/json');
 });
 
@@ -1003,6 +1102,7 @@ $('#import-input').addEventListener('change', async () => {
     merge('suppressions', getSuppressions, s => s.signature);
     merge('feedback', getFeedback, f => f.time + f.rule_id);
     merge('customRules', getCustomRules, r => r.id);
+    merge('reviewLog', getReviewLog, e => e.time + e.file);
     const ext = getExtensions();
     for (const [id, pats] of Object.entries(data.patternExtensions || {})) {
       ext[id] = [...new Set([...(ext[id] || []), ...pats])];
