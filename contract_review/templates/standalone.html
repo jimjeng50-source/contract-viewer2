@@ -357,8 +357,10 @@ async function extractPdf(file) {
 }
 
 // ───────────────────────── 內建檢查（與 Python 版 checks.py 對應） ─────────────────────────
-const CN_DIGITS = {'零':0,'壹':1,'貳':2,'參':3,'叁':3,'参':3,'肆':4,'伍':5,'陸':6,'柒':7,'捌':8,'玖':9};
-const CN_UNITS = {'拾':10,'佰':100,'仟':1000};
+// 大寫（壹貳參）與國字小寫（一二三）都支援：中鼎式訂購單常以國字填寫總金額
+const CN_DIGITS = {'零':0,'壹':1,'貳':2,'參':3,'叁':3,'参':3,'肆':4,'伍':5,'陸':6,'柒':7,'捌':8,'玖':9,
+                   '一':1,'二':2,'兩':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+const CN_UNITS = {'拾':10,'佰':100,'仟':1000,'十':10,'百':100,'千':1000};
 const CN_SECTIONS = {'萬':1e4,'億':1e8,'兆':1e12};
 const CN_CHARS = Object.keys(CN_DIGITS).join('') + Object.keys(CN_UNITS).join('')
                + Object.keys(CN_SECTIONS).join('');
@@ -395,7 +397,7 @@ function checkAmountConsistency(segments, rule) {
       if (cnVal !== arVal) {
         findings.push({
           rule_id: rule.id, severity: rule.severity,
-          message: `金額大小寫不一致：大寫「${cn}」＝${cnVal.toLocaleString()} 元，` +
+          message: `金額國字與數字不一致：國字「${cn}」＝${cnVal.toLocaleString()} 元，` +
                    `數字為 ${arVal.toLocaleString()} 元。`,
           location: seg.location, snippet: matched,
         });
@@ -481,22 +483,30 @@ const RE_PARTY_COLON = /(甲方|乙方|買方|賣方|定作人|承攬人)\s*[：
 const RE_PARTY_ALIAS = /([^\s（(，。;；：]{2,30})\s*[（(]\s*以下簡稱\s*(甲方|乙方|買方|賣方|定作人|承攬人)\s*[)）]/g;
 
 const CONTRACT_AMOUNT_KWS = [
-  [/契約總價|合約總價|契約金額|合約金額|訂購金額|採購金額|承攬報酬|承攬總價|工程總價|契約價金/, 3],
+  [/訂購總金額|含營業稅總金額|含稅總金額|契約總價|合約總價|契約金額|合約金額|訂購金額|採購金額|承攬報酬|承攬總價|工程總價|契約價金/, 3],
   [/總價|總金額|總計|價金/, 2],
 ];
 const RE_DEPOSIT = /定金|訂金|簽約金|頭期款/;
 const RE_BOND_KW = /履約保證|保證金/;
-const RE_LD_KW = /違約金|逾期罰|懲罰性|賠償金|[Ll]iquidated\s+[Dd]amages?|\bLD\b/;
+const RE_LD_KW = /違約金|約定損失賠償|損失賠償|逾期罰|懲罰性|賠償金|[Ll]iquidated\s+[Dd]amages?|\bLD\b/;
+const RE_ITEM = /(訂購品名|契約標的|採購標的|工程名稱|貨品名稱|品名)\s*[：:]\s*([^，。;；：\s][^，。;；：]{1,40})/g;
+const RE_TLIAB_KW = /總責任|責任上限|責任總額|[Tt]otal\s+[Ll]iability|[Aa]ggregate\s+[Ll]iability|賠償責任[^，。]{0,12}(?:不得超過|上限|最高)/;
+// 各期款：「預付款…10%」與「總訂購金額之10% 為預付款」兩種語順
+const RE_PAY_STAGE_A = /(預付款|頭期款|簽約款|文件款|材料付?款|交貨付?款|驗收款|尾款)[^，。;％%]{0,14}?([0-9]+(?:\.[0-9]+)?)\s*[%％]/g;
+const RE_PAY_STAGE_B = /([0-9]+(?:\.[0-9]+)?)\s*[%％][^，。;]{0,8}?為(預付款|頭期款|簽約款|文件款|材料付?款|交貨付?款|驗收款|尾款)/g;
 
 const CN_SMALL = {'零':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
-const FRACTION = '(千分之|萬分之|百分之)\\s*([0-9]+(?:\\.[0-9]+)?|[零一二三四五六七八九十]+)';
+const FRACTION = '(千分之|萬分之|百分之)\\s*([0-9]+(?:\\.[0-9]+)?|[零一二三四五六七八九十百]+)';
 const RE_FRACTION = new RegExp(`${FRACTION}|([0-9]+(?:\\.[0-9]+)?)\\s*[%％]`);
-const RE_LD_PER = /每\s*逾?\s*([0-9一二三四五六七八九十]*)\s*(日|天|週|月)/;
+const RE_LD_PER = /每\s*逾?期?\s*([0-9一二三四五六七八九十]*)\s*(?:個)?\s*(日曆天|工作天|日|天|週|月)/;
 const RE_LD_BASE = new RegExp(`[按依]\\s*([^，。,]{2,14}?)\\s*之?\\s*(?=${FRACTION}|[0-9.]+\\s*[%％])`);
+// 「賠償訂購金額之0.1%」這類沒有「按／依」的寫法
+const RE_LD_BASE2 = new RegExp(
+  `(訂購總?金額|契約總價|合約總價|合約金額|訂單金額|總價金|貨款)之?\\s*(?=${FRACTION}|[0-9.]+\\s*[%％])`);
 const RE_LD_CAP = /(?:上限|最高|不得超過|以)([^，。,]{0,20}?)為限|(?:上限|最高|不得超過)([^，。,]{0,20})/;
 
 const RE_PAY_METHOD = /T\/T|TT電匯|L\/C|信用狀|電匯|匯款|即期支票|支票|現金|月結|票期/g;
-const RE_PAY_TIMING = /(簽約|驗收合格|驗收|交貨|到貨|請款|收到發票|發票開立|完工|每月|次月)[^，。,]{0,8}?([0-9０-９一二三四五六七八九十]+)\s*(?:個)?(日|天|月)內?/;
+const RE_PAY_TIMING = /(簽約|驗收合格|驗收|交貨|到貨|請款|收到發票|發票開立|發票|完工|每月|次月)[^，。,]{0,8}?([0-9０-９一二三四五六七八九十]+)\s*(?:個)?(日曆天|工作天|日|天|月)內?/;
 const RE_INSTALLMENT = /分\s*([0-9一二三四五六七八九十]+)\s*期/;
 const RE_WARRANTY_DUR = /保固[^，。,]{0,12}?([0-9０-９一二三四五六七八九十]+)\s*(?:個)?(年|月|日|天)/;
 const RE_WARRANTY_START = /(驗收合格|驗收|交貨|到貨|完工|竣工|啟用)[^，。,]{0,6}?日?起/;
@@ -515,6 +525,7 @@ function cnSmallToInt(s) {
   s = (s || '').trim();
   if (!s) return null;
   if (/^[0-9]+(?:\.[0-9]+)?$/.test(s)) return Math.floor(parseFloat(s));
+  if (s === '百') return 100;  // 百分之「百」＝100
   if (s.includes('十')) {
     const [head, tail] = s.split('十');
     return (head ? (CN_SMALL[head] ?? 1) : 1) * 10 + (tail ? (CN_SMALL[tail] ?? 0) : 0);
@@ -562,7 +573,7 @@ function amountsIn(text) {
         usedCn.add(i);
         const digits = Math.floor(parseFloat(rendered.split(' ').pop().replace(/,/g, '')));
         const mark = digits === cval ? '' : '，兩者不一致⚠';
-        note = `（大寫 ${ctext}元＝${cval.toLocaleString()}${mark}）`;
+        note = `（國字 ${ctext}元＝${cval.toLocaleString()}${mark}）`;
         span = [Math.min(span[0], cspan[0]), Math.max(span[1], cspan[1])];
         break;
       }
@@ -572,41 +583,61 @@ function amountsIn(text) {
   for (let i = 0; i < cn.length; i++) {
     if (!usedCn.has(i)) {
       const [cspan, ctext, cval] = cn[i];
-      hits.push({ rendered: `大寫 ${ctext}元（＝${cval.toLocaleString()}）`, span: cspan });
+      hits.push({ rendered: `國字 ${ctext}元（＝${cval.toLocaleString()}）`, span: cspan });
     }
   }
   hits.sort((a, b) => a.span[0] - b.span[0]);
   return hits;
 }
 
-function parseLd(sent) {
-  const rate = sent.match(RE_FRACTION);
-  const parts = [];
+function parseLdCap(text) {
+  const m = text.match(RE_LD_CAP);
+  if (!m) return null;
+  const window = m[1] || m[2] || '';
+  const capRate = window.match(RE_FRACTION);
+  if (capRate) {
+    const [capText, capPct] = fractionPct(capRate);
+    // 帶出基準（如「訂購金額的10%」）讓上限可讀
+    const baseM = window.match(/(訂購總?金額|契約總價|合約總價|合約金額|訂單金額|總價金|貨款)/);
+    return (baseM ? baseM[1] + ' ' : '') + capText + (capPct !== null ? `（≈${capPct}％）` : '');
+  }
+  return window.trim() || null;
+}
+
+// 以「段落」為單位解析 LD：費率與上限常分屬不同句（如中鼎 E.1）
+function parseLdSegment(text) {
+  const cap = parseLdCap(text);
+  const rate = text.match(RE_FRACTION);
+  // 段落裡的第一個費率若其實是上限本身（沒有另一個每日費率），視為 cap-only
   if (rate) {
     const [rateText, pct] = fractionPct(rate);
-    const per = sent.match(RE_LD_PER);
-    const base = sent.match(RE_LD_BASE);
+    const per = text.match(RE_LD_PER);
+    if (!per && cap && cap.includes(rateText)) return { capOnly: cap };
+    const base = text.match(RE_LD_BASE) || text.match(RE_LD_BASE2);
     const perText = per ? `每${per[1] || '一'}${per[2]}` : '每期';
     const baseText = base ? base[1].trim() : '（計罰基準未明⚠）';
     const pctText = pct !== null ? `（≈${pct}％${per ? '／' + per[2] : ''}）` : '';
-    parts.push(`${perText}按 ${baseText} 計 ${rateText}${pctText}`);
-  } else {
-    const hits = amountsIn(sent);
-    if (!hits.length) return null;
-    parts.push('定額：' + hits.slice(0, 2).map(h => h.rendered).join('、'));
+    return { line: `${perText}按 ${baseText} 計 ${rateText}${pctText}`, cap };
   }
-  let cap = null;
-  const m = sent.match(RE_LD_CAP);
-  if (m) {
-    const window = m[1] || m[2] || '';
-    const capRate = window.match(RE_FRACTION);
-    if (capRate) {
-      const [capText, capPct] = fractionPct(capRate);
-      cap = capText + (capPct !== null ? `（≈${capPct}％）` : '');
-    } else if (window.trim()) cap = window.trim();
+  const hits = amountsIn(text);
+  if (hits.length) {
+    return { line: '定額：' + hits.slice(0, 2).map(h => h.rendered).join('、'), cap };
   }
-  parts.push(cap ? `上限：${cap}` : '上限：未見約定⚠');
-  return parts.join('；');
+  return cap ? { capOnly: cap } : null;
+}
+
+function parseWarranty(text) {
+  const durs = [...text.matchAll(/([0-9０-９一二三四五六七八九十]+)\s*(?:個)?\s*(年|月)(?![息率])/g)]
+    .slice(0, 2).map(m => m[2] === '月' ? `${m[1]} 個月` : `${m[1]} 年`);
+  if (!durs.length) return null;
+  const starts = [...new Set(
+    [...text.matchAll(/(驗收合格日|完成驗收日|驗收日|交貨日|到貨日|送達工地|完工日|竣工日|啟用日)/g)]
+      .map(m => m[1])
+  )].slice(0, 2);
+  let out = durs.join(' 或 ');
+  if (starts.length) out += `（起算：${starts.join('、')}）`;
+  if (/先到者為準|以先屆至者/.test(text)) out += '，以先到者為準';
+  return out;
 }
 
 function parsePayment(sent) {
@@ -620,13 +651,6 @@ function parsePayment(sent) {
   return parts.length ? parts.join('，') : null;
 }
 
-function parseWarranty(sent) {
-  const dur = sent.match(RE_WARRANTY_DUR);
-  if (!dur) return null;
-  const start = sent.match(RE_WARRANTY_START);
-  return `${dur[1]} ${dur[2]}${start ? `（自${start[1]}日起算）` : ''}`;
-}
-
 function extractSummary(segments) {
   const mkField = (id, label, critical) => ({ id, label, critical, values: [] });
   const add = (fld, text, location, limit = 8) => {
@@ -636,6 +660,7 @@ function extractSummary(segments) {
     fld.values.push({ text, location });
   };
   const parties = mkField('parties', '當事人', false);
+  const items = mkField('items', '交貨品項', true);
   const contractAmount = mkField('contract_amount', '合約金額', true);
   const otherAmounts = mkField('other_amounts', '其他金額', false);
   const signDate = mkField('sign_date', '簽約日期', true);
@@ -643,12 +668,18 @@ function extractSummary(segments) {
   const payment = mkField('payment', '付款條件', true);
   const incoterm = mkField('incoterm', '貿易條件（Incoterms）', false);
   const ld = mkField('ld', '違約金（LD）', true);
+  const tliability = mkField('tliability', '責任上限（Total Liability）', true);
   const bond = mkField('bond', '履約保證金', false);
   const warranty = mkField('warranty', '保固', false);
 
   for (const seg of segments) {
     for (const m of seg.text.matchAll(RE_PARTY_COLON)) add(parties, `${m[1]}：${m[2]}`, seg.location);
     for (const m of seg.text.matchAll(RE_PARTY_ALIAS)) add(parties, `${m[2]}：${m[1]}`, seg.location);
+    for (const m of seg.text.matchAll(RE_ITEM)) {
+      const value = m[2].trim();
+      if (/^(甲方|乙方|買方|賣方|雙方|如附件)/.test(value)) continue;  // 敘述句非品名
+      add(items, `${value}（${m[1]}）`, seg.location, 5);
+    }
     for (const m of seg.text.matchAll(RE_INCOTERM)) {
       add(incoterm, seg.text.slice(m.index, m.index + m[0].length + 24).trim(), seg.location);
     }
@@ -664,8 +695,24 @@ function extractSummary(segments) {
   }
 
   const contractCandidates = [];
+  const payStages = new Map();  // 期款名 → {pct, location}
   let order = 0;
   for (const seg of segments) {
+    // LD 以段落為單位解析：費率與上限常分屬不同句
+    const isLdSeg = RE_LD_KW.test(seg.text);
+    if (isLdSeg) {
+      const parsed = parseLdSegment(seg.text);
+      if (parsed && parsed.line) {
+        ld._pending = ld._pending || [];
+        ld._pending.push({ line: parsed.line, cap: parsed.cap, location: seg.location,
+                           source: trimSent(seg.text) });
+      } else if (parsed && parsed.capOnly) {
+        ld._docCap = ld._docCap || parsed.capOnly;
+      } else if (!parsed) {
+        add(ld, trimSent(seg.text), seg.location);
+      }
+    }
+
     for (const sent0 of seg.text.split(/[。；;]/)) {
       const sent = sent0.trim();
       if (!sent) continue;
@@ -676,7 +723,9 @@ function extractSummary(segments) {
       const isDeposit = RE_DEPOSIT.test(sent);
 
       if (hits.length && !isLd) {
-        const rendered = hits.slice(0, 3).map(h => h.rendered).join('、');
+        const taxNote = /未稅|不含稅/.test(sent) ? '（未稅）'
+                      : /含營業稅|含稅/.test(sent) ? '（含稅）' : '';
+        const rendered = hits.slice(0, 3).map(h => h.rendered).join('、') + taxNote;
         let score = 0;
         for (const [pattern, s] of CONTRACT_AMOUNT_KWS) {
           if (pattern.test(sent)) score = Math.max(score, s);
@@ -687,12 +736,15 @@ function extractSummary(segments) {
         else add(otherAmounts, `其他：${rendered}`, seg.location);
       }
 
-      if (isLd) {
-        const parsed = parseLd(sent);
-        if (parsed) {
-          add(ld, parsed, seg.location);
-          add(ld, `原文：${trimSent(sent)}`, seg.location);
-        } else add(ld, trimSent(sent), seg.location);
+      if (RE_TLIAB_KW.test(sent)) {
+        const rate = sent.match(RE_FRACTION);
+        if (rate) {
+          const [t, p] = fractionPct(rate);
+          add(tliability, `上限 ${t}${p !== null ? `（≈${p}％）` : ''}`, seg.location);
+        } else if (hits.length) {
+          add(tliability, `上限 ${hits[0].rendered}`, seg.location);
+        }
+        add(tliability, `原文：${trimSent(sent)}`, seg.location);
       }
 
       if (isBond) {
@@ -706,12 +758,18 @@ function extractSummary(segments) {
       }
 
       if (/付款|支付|給付價金|價金給付|T\/T|L\/C|信用狀|電匯|月結|票期/.test(sent)) {
+        for (const m of sent.matchAll(RE_PAY_STAGE_A)) {
+          if (!payStages.has(m[1])) payStages.set(m[1], { pct: parseFloat(m[2]), location: seg.location });
+        }
+        for (const m of sent.matchAll(RE_PAY_STAGE_B)) {
+          if (!payStages.has(m[2])) payStages.set(m[2], { pct: parseFloat(m[1]), location: seg.location });
+        }
         add(payment, parsePayment(sent) || trimSent(sent), seg.location);
       }
 
       if (/保固|瑕疵擔保/.test(sent)) {
         const parsed = parseWarranty(sent);
-        if (parsed) add(warranty, parsed, seg.location);
+        add(warranty, parsed || trimSent(sent), seg.location, 4);
       }
 
       // 期限分類取「最後命中」關鍵字；付款句不進期限欄
@@ -742,8 +800,25 @@ function extractSummary(segments) {
     }
   }
 
-  return [parties, contractAmount, otherAmounts, signDate, deadlines,
-          payment, incoterm, ld, bond, warranty];
+  // LD：段落內沒寫上限的，補用文件他處找到的上限；仍沒有才標未見約定
+  for (const p of ld._pending || []) {
+    const cap = p.cap || ld._docCap;
+    add(ld, `${p.line}；上限：${cap || '未見約定⚠'}`, p.location);
+    add(ld, `原文：${p.source}`, p.location);
+  }
+  delete ld._pending; delete ld._docCap;
+
+  // 各期款加總檢查（如 預付款10%＋交貨款80%＋尾款10%），對應「各期款總加應為100%」
+  if (payStages.size >= 2) {
+    const parts = [...payStages.entries()].map(([name, v]) => `${name} ${v.pct}%`);
+    const total = [...payStages.values()].reduce((s, v) => s + v.pct, 0);
+    const mark = Math.abs(total - 100) < 0.01 ? `＝100%` : `＝${total}%⚠（各期款合計應為 100%）`;
+    payment.values.unshift({ text: `期款結構：${parts.join('＋')}${mark}`,
+                             location: [...payStages.values()][0].location });
+  }
+
+  return [parties, items, contractAmount, otherAmounts, signDate, deadlines,
+          payment, incoterm, ld, tliability, bond, warranty];
 }
 
 function bizSummary(summary) {

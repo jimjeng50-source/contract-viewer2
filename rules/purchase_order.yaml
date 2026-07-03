@@ -33,8 +33,8 @@ rules:
     name: 違約金／逾期罰則
     type: required
     severity: warning
-    patterns: ["違約金", "逾期罰款", "罰則", "懲罰性"]
-    message: 全文未發現違約金或逾期罰則條款，請確認是否遺漏。
+    patterns: ["違約金", "逾期罰款", "罰則", "懲罰性", "約定損失賠償", "[Ll]iquidated [Dd]amages?"]
+    message: 全文未發現違約金／約定損失賠償（LD）條款，請確認是否遺漏。
 
   - id: po-warranty
     name: 保固
@@ -42,3 +42,25 @@ rules:
     severity: warning
     patterns: ["保固", "瑕疵擔保"]
     message: 全文未發現保固／瑕疵擔保條款，請確認是否遺漏。
+
+  # ── 以下依中鼎式訂購單注意事項新增 ──
+  - id: po-incoterm
+    name: 貿易條件（Incoterms）
+    type: required
+    severity: info
+    patterns: ["Incoterms?", "FOB", "CIF", "CFR", "EXW", "DDP", "DAP", "FCA", "CPT", "CIP", "DPU", "FAS", "貿易條件"]
+    message: 全文未發現 Incoterms 貿易條件（FOB／CIF／DDP…），涉及交貨責任與風險移轉，請確認是否遺漏。
+
+  - id: po-insurance
+    name: 保險條款
+    type: required
+    severity: info
+    patterns: ["保險", "投保"]
+    message: 全文未發現保險條款（注意事項：保險條款不可刪除，航運保險應延伸至工地），請確認。
+
+  - id: po-covid19
+    name: COVID-19 條款
+    type: required
+    severity: info
+    patterns: ["COVID-19", "COVID", "新冠", "疫情"]
+    message: 全文未發現 COVID-19／疫情條款（注意事項：訂購單應有 COVID-19 條款），請確認是否遺漏。
