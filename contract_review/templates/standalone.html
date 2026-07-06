@@ -100,6 +100,9 @@
           <option value="common">一般契約（僅共用規則）</option>
         </select>
       </label>
+      <label title="依頁首「Page X of Y」偵測主合約頁數，略過請購單/ITP 等附件頁">
+        <input type="checkbox" id="main-only" checked> 僅審主合約
+      </label>
       <span class="stats">審完可對每項結果按「誤報」，系統會記住、之後不再報。</span>
     </div>
   </div>
@@ -347,7 +350,7 @@ async function extractPdf(file) {
       const text = lines.get(y)
         .sort((a, b) => a.transform[4] - b.transform[4])
         .map(i => i.str).join('').trim();
-      if (text) segments.push({ text, location: `第 ${p} 頁第 ${++ln} 行` });
+      if (text) segments.push({ text, location: `第 ${p} 頁第 ${++ln} 行`, page: p });
     }
   }
   if (!segments.length) {
@@ -477,6 +480,12 @@ const RE_GENERIC_YUAN = new RegExp(`(${NUM})\\s*元`, 'g');
 const RE_CN_AMOUNT = new RegExp(`(?:新[臺台]幣)?\\s*([${CN_CHARS}]{3,})\\s*元`, 'g');
 const RE_ROC_DATE_S = /(?:中華)?民國\s*\d{1,3}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/;
 const RE_AD_DATE_S = /(?:西元\s*)?(?:19|20)\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/;
+const RE_SLASH_DATE = /(?:19|20)\d{2}[./-]\d{1,2}[./-]\d{1,2}/;  // 2026/08/31 等
+const RE_SIGN_LABEL = /(訂單日期|訂約日期|簽約日期?|簽署日期?|立約日期|Issue\s*Date)/;
+function findDate(text) {
+  const m = text.match(RE_ROC_DATE_S) || text.match(RE_AD_DATE_S) || text.match(RE_SLASH_DATE);
+  return m ? m[0] : null;
+}
 const RE_INCOTERM = /\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP|DDU|DES|DEQ|C&F|CNF)\b/g;
 const RE_INCOTERM_VER = /Incoterms?\s*®?\s*(20\d{2}|19\d{2})/i;
 const RE_PARTY_COLON = /(甲方|乙方|買方|賣方|定作人|承攬人)\s*[：:]\s*([^\s（(，。;；：]{2,30})/g;
@@ -653,10 +662,13 @@ function parsePayment(sent) {
 
 function extractSummary(segments) {
   const mkField = (id, label, critical) => ({ id, label, critical, values: [] });
-  const add = (fld, text, location, limit = 8) => {
+  const norm = s => s.replace(/[\s　]+/g, '');
+  const add = (fld, text, location, limit = 4) => {
     text = text.trim();
     if (!text || fld.values.length >= limit) return;
-    if (fld.values.some(v => v.text === text)) return;
+    // 近似去重：正規化後前 24 字相同視為同一筆（同品項不同欄位標籤等）
+    const key = norm(text).slice(0, 24);
+    if (fld.values.some(v => norm(v.text).slice(0, 24) === key)) return;
     fld.values.push({ text, location });
   };
   const parties = mkField('parties', '當事人', false);
@@ -671,6 +683,7 @@ function extractSummary(segments) {
   const tliability = mkField('tliability', '責任上限（Total Liability）', true);
   const bond = mkField('bond', '履約保證金', false);
   const warranty = mkField('warranty', '保固', false);
+  const incotermTerms = new Set();
 
   for (const seg of segments) {
     for (const m of seg.text.matchAll(RE_PARTY_COLON)) add(parties, `${m[1]}：${m[2]}`, seg.location);
@@ -678,18 +691,22 @@ function extractSummary(segments) {
     for (const m of seg.text.matchAll(RE_ITEM)) {
       const value = m[2].trim();
       if (/^(甲方|乙方|買方|賣方|雙方|如附件)/.test(value)) continue;  // 敘述句非品名
-      add(items, `${value}（${m[1]}）`, seg.location, 5);
+      add(items, `${value}（${m[1]}）`, seg.location, 3);
     }
     for (const m of seg.text.matchAll(RE_INCOTERM)) {
-      add(incoterm, seg.text.slice(m.index, m.index + m[0].length + 24).trim(), seg.location);
+      if (incotermTerms.has(m[1])) continue;  // 同術語只列一次
+      incotermTerms.add(m[1]);
+      let ctx = seg.text.slice(m.index, m.index + m[0].length + 24).trim();
+      if (/份副本|份正本|適用|Applicable/i.test(ctx)) ctx = m[1];  // 文件清單/勾選表雜訊只留術語
+      add(incoterm, ctx, seg.location, 3);
     }
     const ver = seg.text.match(RE_INCOTERM_VER);
-    if (ver) add(incoterm, ver[0], seg.location);
-    const dateM = seg.text.match(RE_ROC_DATE_S) || seg.text.match(RE_AD_DATE_S);
-    if (dateM) {
+    if (ver) add(incoterm, ver[0], seg.location, 4);
+    const d = findDate(seg.text);
+    if (d) {
       const stripped = seg.text.replace(/[　 ]/g, '');
-      if (stripped === dateM[0].replace(/ /g, '') || /簽約|簽訂|立約|訂約/.test(seg.text)) {
-        add(signDate, dateM[0], seg.location, 2);
+      if (stripped === d.replace(/ /g, '') || /訂單日期|訂約|簽約|簽署|立約|簽訂|Issue\s*Date/i.test(seg.text)) {
+        add(signDate, d, seg.location, 2);
       }
     }
   }
@@ -708,8 +725,10 @@ function extractSummary(segments) {
                            source: trimSent(seg.text) });
       } else if (parsed && parsed.capOnly) {
         ld._docCap = ld._docCap || parsed.capOnly;
-      } else if (!parsed) {
-        add(ld, trimSent(seg.text), seg.location);
+      } else if (!parsed && /[0-9％%]/.test(seg.text)) {
+        // 沒解析出費率的敘述句：只收含數字者，且放到後備清單（有判讀結果就不列）
+        ld._raw = ld._raw || [];
+        ld._raw.push({ text: trimSent(seg.text), location: seg.location });
       }
     }
 
@@ -748,13 +767,16 @@ function extractSummary(segments) {
       }
 
       if (isBond) {
+        // 只收有具體數額/占比的保證金內容，敘述句（保證延展、失權條款等）不進摘要
         const pct = sent.match(RE_FRACTION);
         if (pct && !hits.length) {
           const [text, value] = fractionPct(pct);
-          add(bond, text + (value !== null ? `（≈${value}％）` : ''), seg.location);
+          const baseM = sent.match(/(訂購總?金額|契約總價|合約金額)/);
+          add(bond, (baseM ? baseM[1] + ' ' : '') + text
+                    + (value !== null ? `（≈${value}％）` : ''), seg.location, 2);
         } else if (hits.length) {
-          add(bond, hits.slice(0, 2).map(h => h.rendered).join('、'), seg.location);
-        } else add(bond, trimSent(sent), seg.location);
+          add(bond, hits.slice(0, 2).map(h => h.rendered).join('、'), seg.location, 2);
+        }
       }
 
       if (/付款|支付|給付價金|價金給付|T\/T|L\/C|信用狀|電匯|月結|票期/.test(sent)) {
@@ -764,12 +786,15 @@ function extractSummary(segments) {
         for (const m of sent.matchAll(RE_PAY_STAGE_B)) {
           if (!payStages.has(m[2])) payStages.set(m[2], { pct: parseFloat(m[1]), location: seg.location });
         }
-        add(payment, parsePayment(sent) || trimSent(sent), seg.location);
+        const parsed = parsePayment(sent);
+        // 解析不出結構的句子不進摘要（避免「付款條件：See Article B」等表頭雜訊）
+        if (parsed) add(payment, parsed, seg.location, 3);
       }
 
-      if (/保固|瑕疵擔保/.test(sent)) {
+      if (/保固期間|保固期為|保固期限|瑕疵擔保|保固.{0,6}[0-9０-９一二三四五六七八九十]+\s*(?:個)?\s*[年月]/.test(sent)
+          && !/保證/.test(sent)) {
         const parsed = parseWarranty(sent);
-        add(warranty, parsed || trimSent(sent), seg.location, 4);
+        if (parsed) add(warranty, parsed, seg.location, 2);
       }
 
       // 期限分類取「最後命中」關鍵字；付款句不進期限欄
@@ -781,11 +806,14 @@ function extractSummary(segments) {
           }
         }
         if (bestLabel) {
-          const dateM = sent.match(RE_ROC_DATE_S) || sent.match(RE_AD_DATE_S);
+          const dateM = findDate(sent);
           const rel = sent.match(RE_REL_DEADLINE);
-          if (dateM) add(deadlines, `${bestLabel}：${dateM[0]} 前`, seg.location);
-          else if (rel) {
-            add(deadlines, `${bestLabel}：${rel[1] ? rel[1] + '後 ' : ''}${rel[2]} ${rel[3]}內`, seg.location);
+          if (dateM) {
+            const suffix = /前|之前/.test(sent) ? ' 前' : '';
+            add(deadlines, `${bestLabel}：${dateM}${suffix}`, seg.location, 3);
+          } else if (rel) {
+            add(deadlines, `${bestLabel}：${rel[1] ? rel[1] + '後 ' : ''}${rel[2]} ${rel[3]}內`,
+                seg.location, 3);
           }
         }
       }
@@ -800,13 +828,18 @@ function extractSummary(segments) {
     }
   }
 
-  // LD：段落內沒寫上限的，補用文件他處找到的上限；仍沒有才標未見約定
-  for (const p of ld._pending || []) {
+  // LD：判讀出的費率優先（最多 2 筆＋第一筆附原文）；段落內沒寫上限的補
+  // 文件他處的上限，仍沒有才標未見約定。完全沒判讀結果才列敘述句。
+  const ldParsed = (ld._pending || []).slice(0, 2);
+  ldParsed.forEach((p, i) => {
     const cap = p.cap || ld._docCap;
     add(ld, `${p.line}；上限：${cap || '未見約定⚠'}`, p.location);
-    add(ld, `原文：${p.source}`, p.location);
+    if (i === 0) add(ld, `原文：${p.source}`, p.location);
+  });
+  if (!ldParsed.length) {
+    for (const r of (ld._raw || []).slice(0, 2)) add(ld, r.text, r.location);
   }
-  delete ld._pending; delete ld._docCap;
+  delete ld._pending; delete ld._docCap; delete ld._raw;
 
   // 各期款加總檢查（如 預付款10%＋交貨款80%＋尾款10%），對應「各期款總加應為100%」
   if (payStages.size >= 2) {
@@ -904,13 +937,31 @@ function runRules(rules, segments) {
   return findings;
 }
 
-async function reviewFile(file, docTypeChoice) {
+// 從頁首「Page X of Y／頁次 X 之 Y」推斷主合約頁數，供略過請購單/ITP 等附件
+function detectMainPageLimit(segments) {
+  const headText = segments.filter(s => s.page && s.page <= 3).map(s => s.text).join(' ');
+  const m = headText.match(/Page\s*\d{1,3}\s*of\s*(\d{1,3})/i)
+         || headText.match(/頁\s*次[：:]?\s*\d{1,3}\s*之\s*(\d{1,3})/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+async function reviewFile(file, docTypeChoice, mainOnly = true) {
   const suffix = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
   let segments;
   if (suffix === '.docx') segments = await extractDocx(file);
   else if (suffix === '.pdf') segments = await extractPdf(file);
   else if (suffix === '.doc') throw new Error('不支援舊版 .doc，請先另存為 .docx。');
   else throw new Error(`不支援的格式 ${suffix}（僅 .docx/.pdf）。`);
+  let scopeNote = '';
+  if (mainOnly && segments.some(s => s.page)) {
+    const limit = detectMainPageLimit(segments);
+    const total = Math.max(...segments.map(s => s.page || 1));
+    if (limit && limit < total) {
+      segments = segments.filter(s => !s.page || s.page <= limit);
+      scopeNote = `僅審主合約第 1–${limit} 頁，已略過附件（第 ${limit + 1}–${total} 頁，` +
+                  `請購單／ITP 等；如需全文請取消「僅審主合約」重審）`;
+    }
+  }
   const fullText = segments.map(s => s.text).join('\n');
   const docType = docTypeChoice === 'auto' ? detectDocType(fullText) : docTypeChoice;
   let findings = runRules(activeRules(docType), segments);
@@ -918,7 +969,7 @@ async function reviewFile(file, docTypeChoice) {
   const before = findings.length;
   findings = findings.filter(f => !sigs.has(signature(f.rule_id, f.snippet)));
   return { docType, findings, suppressed: before - findings.length,
-           summary: extractSummary(segments) };
+           summary: extractSummary(segments), scopeNote };
 }
 
 // ───────────────────────── UI ─────────────────────────
@@ -942,14 +993,15 @@ async function review(files) {
     const card = document.createElement('div');
     card.className = 'card file-card';
     try {
-      const r = await reviewFile(file, docTypeChoice);
+      const r = await reviewFile(file, docTypeChoice, $('#main-only').checked);
       recordLogEntry(file.name, r);
       refreshStats();
       const counts = { error: 0, warning: 0, info: 0 };
       r.findings.forEach(f => counts[f.severity]++);
       let html = `<h2>${esc(file.name)}</h2>
         <div class="sub">${esc(DOC_TYPES[r.docType])}．錯誤 ${counts.error}、警告 ${counts.warning}、提示 ${counts.info}` +
-        (r.suppressed ? `．已自動略過 ${r.suppressed} 項學習過的誤報` : '') + `</div>`;
+        (r.suppressed ? `．已自動略過 ${r.suppressed} 項學習過的誤報` : '') +
+        (r.scopeNote ? `<br>📄 ${esc(r.scopeNote)}` : '') + `</div>`;
       html += bizSummary(r.summary);
       if (!r.findings.length) {
         html += `<span class="clean">未發現問題。</span>`;
