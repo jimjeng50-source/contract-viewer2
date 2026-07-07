@@ -36,6 +36,18 @@ python samples/make_samples.py           # 重新產生範例合約
 - `learning/`：機器學習資料（suppressions.yaml／feedback.jsonl）與審查紀錄（review_log.jsonl），勿手動與 lessons 混用
 - `samples/`：含刻意錯誤的範例合約與產生器
 
+## AI 直接審查工作流（2026-07 起與工具並行）
+
+使用者會直接把合約檔案丟進對話請 AI 審查（不經過單機版工具）。流程：
+
+1. **審查前必讀 `review-guidelines.md`**（審查準則，活文件）。
+2. 讀取合約（docx/pdf 皆可；掃描 PDF 用 pypdfium2 轉圖逐頁讀）。
+3. 依準則輸出：商務摘要（精簡表格）→ 審查意見（依風險排序）→ 需人工確認清單。
+4. 審查報告存 `reviews/YYYYMMDD-檔名.md` 並 commit（合約原文**不要** commit）。
+5. **使用者 comment 後**：可一般化的判斷回寫 `review-guidelines.md`（錯誤判斷改寫或刪除、
+   新觀點加條目附日期），這是跨 session 學習的機制；個案結論記在該篇 review 檔尾。
+6. 能落地成單機版規則／判讀邏輯的，順手落地並重打包 dist/。
+
 ## 工作守則（對 AI 助手）
 
 1. **session 開始先讀 `lessons/`**：先掃各檔第一行摘要，相關的再展開。
