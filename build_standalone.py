@@ -97,6 +97,10 @@ def build(vendor: Path | None, out_path: Path) -> None:
         ),
         "/*__RULES_JSON__*/": js_safe(rules_json),
         "/*__CMAPS_JSON__*/": load_cmaps_json(vendor),
+        "/*__GUIDELINES__*/": js_safe(json.dumps(
+            (REPO / "review-guidelines.md").read_text(encoding="utf-8"),
+            ensure_ascii=False,
+        )),
         "/*__BUILD_INFO__*/": f"{date.today().isoformat()}（內建 {rule_count} 條規則）",
     }
     for placeholder, content in replacements.items():

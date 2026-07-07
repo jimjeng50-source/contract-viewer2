@@ -54,6 +54,11 @@
   .biz .miss { color: var(--warn); background: var(--warn-bg);
                padding: 1px 6px; border-radius: 4px; }
   .biz .vloc { color: var(--muted); font-size: 12px; }
+  .ai-out { margin: 10px 0 14px; border: 1px solid var(--line); border-left: 3px solid var(--accent);
+            border-radius: 8px; padding: 10px 14px; background: #fafbfd; }
+  .ai-out .ai-head { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .ai-out .ai-body { white-space: pre-wrap; font-size: 14px; line-height: 1.65;
+                     word-break: break-word; }
   .acts { white-space: nowrap; }
   .acts button { font-size: 12px; padding: 4px 8px; margin-right: 4px; }
   .learned { color: var(--ok); font-size: 12px; }
@@ -153,6 +158,30 @@
 
   <div class="card">
     <details>
+      <summary>🤖 AI 語意判讀設定</summary>
+      <p class="hint" style="margin-top:10px">
+        設定 Anthropic API key 後，結果卡片會多「🤖 AI 語意判讀」按鈕：<b>先在本機去識別化</b>（同下方設定，含自訂遮蔽詞），
+        只把遮蔽後的條款文字送給 Claude 依審查準則做語意審查，回覆在<b>本機還原代號</b>後顯示。
+        Key 只存在這台瀏覽器的 localStorage，不會寫入任何檔案。
+      </p>
+      <div class="controls" style="margin-top:8px">
+        <input type="password" id="api-key" placeholder="sk-ant-..." style="flex:1;min-width:260px">
+        <select id="ai-model">
+          <option value="claude-opus-4-8" selected>Opus 4.8（最準）</option>
+          <option value="claude-sonnet-5">Sonnet 5（平衡）</option>
+          <option value="claude-haiku-4-5">Haiku 4.5（快省）</option>
+        </select>
+        <button class="primary" id="api-key-save">儲存</button>
+        <button id="api-key-clear">清除</button>
+      </div>
+      <p class="hint" style="margin-top:8px">
+        注意：呼叫會把「去識別化後」的文字傳到 Anthropic API（商用條款預設不用於訓練）。使用前請確認公司資安政策允許。
+      </p>
+    </details>
+  </div>
+
+  <div class="card">
+    <details>
       <summary>去識別化匯出設定</summary>
       <p class="hint" style="margin-top:10px">
         審完任一檔案後，結果卡片上會有「🔒 去識別化匯出」按鈕：在<b>本機</b>把公司名、金額（阿拉伯＋國字）、統編、電話、Email、地址、帳號、單號、專案名、聯絡人替換成代號，
@@ -205,6 +234,8 @@
 const BASE_RULES = /*__RULES_JSON__*/;
 // pdf.js 解 CID 字型（無內嵌 ToUnicode 的中文 PDF）所需的 CMap 表，全部內嵌以離線運作
 const CMAPS = /*__CMAPS_JSON__*/;
+// AI 語意判讀用的審查準則（打包時嵌入 review-guidelines.md）
+const GUIDELINES = /*__GUIDELINES__*/;
 
 // ───────────────────────── 共用工具 ─────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -1085,6 +1116,114 @@ function exportDeid(fileName, segments) {
   toast(`已產出去識別化檔（遮蔽：${statsLine}）。對照表請留在本機。`, 6000);
 }
 
+// ───────────────────────── AI 語意判讀（Anthropic API 直連） ─────────────────────────
+// 流程：本機去識別化 → 只送遮蔽後文字 → 串流接收審查意見 → 本機還原代號後顯示。
+const AI_PRICING = {  // USD / 1M tokens [input, output]
+  'claude-opus-4-8': [5, 25], 'claude-sonnet-5': [3, 15], 'claude-haiku-4-5': [1, 5],
+};
+
+function aiSystemPrompt() {
+  return [
+    '你是資深的合約審查專家，協助台灣工程公司審查訂購單合約與發包承攬契約。',
+    '你收到的文件已在使用者本機去識別化：公司名→「公司A/公司B」、金額→「[金額N]」等代號，',
+    '請直接以代號行文（使用者會自行對照還原）；國字/數字金額一致性已由離線工具檢查，勿當成問題提出。',
+    '',
+    '請依下列審查準則審查，輸出三段（用 Markdown 標題分段，力求精簡）：',
+    '一、商務摘要：一張表，每項一行（品項、金額、交期、付款、Incoterms、LD、責任上限、保證、保固）。',
+    '二、審查意見：依風險高／中／低排序，每條含條款位置、問題、風險原因、具體建議修法。',
+    '三、需人工確認清單：無法從文件確認的事項。',
+    '若發現去識別化疑似有遺漏（殘留真實公司名/金額），先在開頭提醒。',
+    '',
+    '＝＝ 審查準則 ＝＝',
+    GUIDELINES,
+  ].join('\n');
+}
+
+async function aiReview(entry, outEl, btn) {
+  const key = (store.get('apiKey', '') || '').trim();
+  if (!key) { toast('請先在「AI 語意判讀設定」輸入 API key。', 5000); return; }
+  const model = store.get('aiModel', 'claude-opus-4-8');
+  const customTerms = ($('#deid-terms')?.value || '').split(/[;；,，]/);
+  const { text, map, stats } = deidentify(entry.segments, customTerms);
+  const statsLine = Object.entries(stats).map(([t, n]) => `${t} ${n}`).join('、') || '無';
+
+  btn.disabled = true;
+  outEl.hidden = false;
+  outEl.innerHTML = `<div class="ai-head">🤖 AI 語意判讀（${esc(model)}）．已本機遮蔽：${esc(statsLine)}．審查中…</div><div class="ai-body"></div>`;
+  const body = outEl.querySelector('.ai-body');
+  const head = outEl.querySelector('.ai-head');
+
+  const request = {
+    model, max_tokens: 16000, stream: true,
+    system: [{ type: 'text', text: aiSystemPrompt(), cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: `請審查以下去識別化合約：\n\n${text}` }],
+  };
+  // Haiku 4.5 不支援 adaptive thinking，其餘模型明確開啟
+  if (model !== 'claude-haiku-4-5') request.thinking = { type: 'adaptive' };
+
+  let raw = '', usageIn = 0, usageOut = 0;
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { msg = (await res.json()).error?.message || msg; } catch {}
+      if (res.status === 401) msg = 'API key 無效或已撤銷（401）：' + msg;
+      if (res.status === 429) msg = '已達速率限制（429），請稍後再試：' + msg;
+      throw new Error(msg);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+        if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+          raw += ev.delta.text;
+          body.textContent = raw;  // 串流中先顯示原始（代號）版本
+        } else if (ev.type === 'message_start') {
+          usageIn = ev.message?.usage?.input_tokens || 0;
+        } else if (ev.type === 'message_delta') {
+          usageOut = ev.usage?.output_tokens || usageOut;
+        } else if (ev.type === 'error') {
+          throw new Error(ev.error?.message || 'API 串流錯誤');
+        }
+      }
+    }
+    // 本機還原代號（長代號優先，避免部分覆蓋）
+    let restored = raw;
+    const entries = [...map.entries()].sort((a, b) => b[1].ph.length - a[1].ph.length);
+    for (const [original, { ph }] of entries) restored = restored.split(ph).join(original);
+    body.textContent = restored;
+    const [pin, pout] = AI_PRICING[model] || [0, 0];
+    const cost = (usageIn * pin + usageOut * pout) / 1e6;
+    head.textContent = `🤖 AI 語意判讀完成（${model}）．tokens：輸入 ${usageIn.toLocaleString()}／輸出 ${usageOut.toLocaleString()}` +
+      `（約 US$${cost.toFixed(3)}）．代號已在本機還原顯示`;
+  } catch (err) {
+    head.textContent = `🤖 AI 語意判讀失敗：${err.message}`;
+    if (!raw) body.textContent = /Failed to fetch|NetworkError/.test(err.message)
+      ? '連線失敗：請確認網路可達 api.anthropic.com（公司防火牆可能封鎖）。'
+      : '';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ───────────────────────── UI ─────────────────────────
 const drop = $('#drop'), fileInput = $('#file-input'), resultsEl = $('#results');
 
@@ -1119,7 +1258,11 @@ async function review(files) {
         (r.scopeNote ? `<br>📄 ${esc(r.scopeNote)}` : '') +
         `　<button class="deid-btn" data-idx="${deidIdx}" ` +
         `title="本機替換公司名/金額/統編等為代號，產出可上傳的文字檔＋留在本機的對照表">` +
-        `🔒 去識別化匯出</button></div>`;
+        `🔒 去識別化匯出</button>` +
+        `　<button class="ai-btn" data-idx="${deidIdx}" ` +
+        `title="本機去識別化後呼叫 Claude 做語意審查（需先設定 API key）">` +
+        `🤖 AI 語意判讀</button></div>` +
+        `<div class="ai-out" hidden></div>`;
       html += bizSummary(r.summary);
       if (!r.findings.length) {
         html += `<span class="clean">未發現問題。</span>`;
@@ -1154,6 +1297,12 @@ resultsEl.addEventListener('click', e => {
   if (btn.classList.contains('deid-btn')) {
     const entry = (window._deidStore || [])[parseInt(btn.dataset.idx, 10)];
     if (entry) exportDeid(entry.name, entry.segments);
+    return;
+  }
+  if (btn.classList.contains('ai-btn')) {
+    const entry = (window._deidStore || [])[parseInt(btn.dataset.idx, 10)];
+    const outEl = btn.closest('.file-card').querySelector('.ai-out');
+    if (entry && outEl) aiReview(entry, outEl, btn);
     return;
   }
   const cell = btn.closest('.acts');
@@ -1343,6 +1492,21 @@ $('#clear-learning').addEventListener('click', () => {
     .forEach(k => localStorage.removeItem('cv2.' + k));
   refreshStats();
   toast('已清除全部學習資料。');
+});
+
+// ── AI 設定 ──
+$('#api-key').value = store.get('apiKey', '') || '';
+$('#ai-model').value = store.get('aiModel', 'claude-opus-4-8');
+$('#api-key-save').addEventListener('click', () => {
+  store.set('apiKey', $('#api-key').value.trim());
+  store.set('aiModel', $('#ai-model').value);
+  toast('已儲存 API 設定（只存在這台瀏覽器）。');
+});
+$('#ai-model').addEventListener('change', () => store.set('aiModel', $('#ai-model').value));
+$('#api-key-clear').addEventListener('click', () => {
+  localStorage.removeItem('cv2.apiKey');
+  $('#api-key').value = '';
+  toast('已清除 API key。');
 });
 
 refreshStats();
