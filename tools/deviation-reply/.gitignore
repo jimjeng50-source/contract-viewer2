@@ -1,0 +1,7 @@
+node_modules/
+e2e/*.html
+e2e/o_*
+e2e/*.png
+e2e/*.xlsx
+e2e/*.docx
+e2e/*.pdf

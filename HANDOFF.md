@@ -19,6 +19,10 @@
 - 使用者下載的單機版 = `dist/` 現檔；改了 `templates/standalone.html` 或 `rules/` 必須
   `python build_standalone.py` 重打包並用 SendUserFile 附新檔給使用者
 
+## 二之一、另一個工具：廠商異議回覆台（2026-10-18）
+
+`tools/deviation-reply/`：回覆廠商商務異議的單檔 HTML（Gemini 免費層＋去識別化＋規則檔學習迴路），與合約審查單機版分開、規則檔也不同（用 SharePoint 上的「商務條款底線 MasterFile.xlsx」）。細節見該目錄 README。
+
 ## 三、開發方針（重要，已寫入 CLAUDE.md）
 
 1. **只開發單機版**（`contract_review/templates/standalone.html` + `build_standalone.py`）。

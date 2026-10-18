@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廠商異議回覆台</title>
+<style>
+:root{--o:#E8710A;--o2:#fff4ea;--k:#1d1d1f;--g:#6b6b6b;--ln:#e3e3e3;--bg:#f6f6f4;--ok:#1f7a3d;--okb:#e8f5ec;--warn:#9a5b00;--warnb:#fff3d6;--bad:#b42318;--badb:#fdecea;--r:10px}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",system-ui,sans-serif;color:var(--k);background:var(--bg);font-size:14px;line-height:1.55}
+header{background:#fff;border-bottom:1px solid var(--ln);padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0;color:var(--o);white-space:nowrap}
+#ruleBadge{font-size:12.5px;color:var(--g);flex:1;min-width:220px}
+#ruleBadge b{color:var(--k)}
+main{max-width:1180px;margin:0 auto;padding:18px 20px 120px}
+.card{background:#fff;border:1px solid var(--ln);border-radius:var(--r);padding:16px;margin-bottom:14px}
+h2{font-size:16px;margin:0 0 10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--g)}
+input[type=text],input[type=password],input[type=number],input[type=month],select,textarea{font:inherit;color:var(--k);border:1px solid #cfcfcf;border-radius:6px;padding:6px 8px;background:#fff}
+textarea{width:100%;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--o);outline-offset:-1px;border-color:var(--o)}
+button.b{font:inherit;border:1px solid #cfcfcf;background:#fff;border-radius:6px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+button.b:hover{border-color:var(--o);color:var(--o)}
+button.p{background:var(--o);border-color:var(--o);color:#fff;font-weight:700}
+button.p:hover{background:#cf6207;color:#fff}
+button.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+.muted{color:var(--g);font-size:12px}
+.chip{display:inline-block;font-size:12px;padding:1px 8px;border-radius:99px;background:#eee;color:var(--g);white-space:nowrap}
+.chip.ok{background:var(--okb);color:var(--ok)}.chip.warn{background:var(--warnb);color:var(--warn)}.chip.bad{background:var(--badb);color:var(--bad)}.chip.o{background:var(--o2);color:var(--o)}
+.note{border-left:4px solid var(--o);background:var(--o2);padding:8px 12px;border-radius:4px;margin:8px 0;font-size:13px}
+.note.bad{border-color:var(--bad);background:var(--badb)}.note.warn{border-color:#d69e00;background:var(--warnb)}.note.ok{border-color:var(--ok);background:var(--okb)}
+#drop{border:2px dashed #c9c9c9;border-radius:14px;padding:44px 20px;text-align:center;background:#fff;cursor:pointer;transition:.15s}
+#drop.hover{border-color:var(--o);background:var(--o2)}
+#drop .big{font-size:20px;font-weight:700;margin-bottom:6px}
+.steps{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+.steps span{font-size:12px;padding:3px 10px;border-radius:99px;background:#f1f1f1;color:var(--g)}
+.item{background:#fff;border:1px solid var(--ln);border-radius:var(--r);margin-bottom:12px;overflow:hidden}
+.item.done{border-color:var(--ok)}
+.item-h{display:flex;gap:8px;align-items:center;padding:8px 14px;background:#fafafa;border-bottom:1px solid var(--ln);flex-wrap:wrap}
+.item-b{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr);gap:16px;padding:14px}
+@media(max-width:900px){.item-b{grid-template-columns:1fr}}
+.vend{white-space:pre-wrap;background:#fbfbfb;border:1px solid var(--ln);border-radius:6px;padding:10px;font-size:13.5px}
+.reason{font-size:12.5px;color:var(--g);margin-top:6px}
+.rule{border:1px dashed var(--o);background:var(--o2);border-radius:8px;padding:10px;margin-top:10px;font-size:13px}
+.lbl{font-size:12px;color:var(--g);margin:6px 0 2px}
+#bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--ln);padding:10px 20px;display:none;z-index:6}
+#bar .in{max-width:1180px;margin:0 auto;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.prog{flex:1;min-width:160px;height:8px;background:#eee;border-radius:99px;overflow:hidden}.prog i{display:block;height:100%;background:var(--ok);width:0}
+dialog{border:0;border-radius:12px;padding:0;width:min(1100px,96vw);max-height:92vh;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+.dh{padding:12px 16px;border-bottom:1px solid var(--ln);display:flex;align-items:center;gap:10px}
+.db{padding:14px 16px;overflow:auto;max-height:calc(92vh - 120px)}
+.df{padding:10px 16px;border-top:1px solid var(--ln);display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.g2{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:14px}@media(max-width:900px){.g2{grid-template-columns:1fr}}
+pre.mask{white-space:pre-wrap;word-break:break-word;background:#fbfbfb;border:1px solid var(--ln);border-radius:6px;padding:10px;font-family:inherit;font-size:12.5px;margin:0;max-height:52vh;overflow:auto}
+pre.mask mark{background:var(--o2);color:var(--o);font-weight:700}
+table.t{border-collapse:collapse;width:100%;font-size:12.5px}
+table.t th{text-align:left;color:var(--o);border-bottom:1.5px solid var(--k);padding:5px}
+table.t td{border-bottom:1px solid var(--ln);padding:5px;vertical-align:top}
+.terms{max-height:34vh;overflow:auto;border:1px solid var(--ln);border-radius:6px}
+#toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;display:none;z-index:99;max-width:90vw}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.thumbs img{height:110px;border:1px solid var(--ln);border-radius:4px}
+details summary{cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <h1>廠商異議回覆台</h1>
+  <div id="ruleBadge">尚未開啟規則檔</div>
+  <button class="b" id="btnOpenRules">開啟規則檔</button>
+  <button class="b" id="btnSaveRules" disabled>存回規則檔</button>
+  <button class="b" id="btnReview">每月 Review</button>
+  <button class="b" id="btnSettings">設定</button>
+</header>
+<main>
+  <div id="intro" class="card" style="display:none"></div>
+  <div id="drop">
+    <div class="big">把廠商的異議檔拖到這裡</div>
+    <div class="muted">Excel／Word／PDF（含掃描檔）／圖片皆可，或點此選檔</div>
+    <div class="steps"><span>① 拖入檔案</span><span>② AI 依底線草擬回覆</span><span>③ 你同意或給意見</span><span>④ 學成規則（待核）</span><span>⑤ 產出完稿</span></div>
+  </div>
+  <input type="file" id="fileIn" hidden accept=".xlsx,.xlsm,.xls,.docx,.pdf,.jpg,.jpeg,.png">
+  <input type="file" id="ruleIn" hidden accept=".xlsx,.xlsm">
+  <div id="session" style="margin-top:14px"></div>
+  <div id="items"></div>
+</main>
+
+<div id="bar"><div class="in">
+  <span id="barTxt" class="muted"></span><div class="prog"><i id="barProg"></i></div>
+  <button class="b" id="btnAgreeAll">其餘全部同意</button>
+  <button class="b p" id="btnExport">產出完稿</button>
+</div></div>
+
+<!-- 送出確認（去識別化） -->
+<dialog id="dlg">
+  <div class="dh"><b id="dlgTitle">送出前確認</b><span id="dlgInfo" class="muted"></span><span style="flex:1"></span><button class="b" id="dlgCancel">取消</button></div>
+  <div class="db">
+    <div id="dlgWarn"></div>
+    <div class="g2">
+      <div>
+        <div class="lbl">遮蔽清單（取消勾選＝不遮；類別可改）</div>
+        <div class="terms"><table class="t" id="dlgTerms"></table></div>
+        <div class="lbl" style="margin-top:10px">漏遮的詞：在右側內容反白後按「加入遮蔽」</div>
+        <div class="row"><select id="dlgType"></select><button class="b" id="dlgAdd">加入遮蔽</button><label class="muted"><input type="checkbox" id="dlgDict" checked> 同時存入詞庫</label></div>
+        <div id="dlgImgs"></div>
+      </div>
+      <div>
+        <div class="lbl">實際送給 Gemini 的內容（已遮蔽）</div>
+        <pre class="mask" id="dlgBody"></pre>
+      </div>
+    </div>
+  </div>
+  <div class="df"><label><input type="checkbox" id="dlgOk"> 我已確認以上內容可以送出</label><button class="b p" id="dlgSend" disabled>送出</button></div>
+</dialog>
+
+<!-- 設定 -->
+<dialog id="dlgSet">
+  <div class="dh"><b>設定</b><span style="flex:1"></span><button class="b" onclick="this.closest('dialog').close()">關閉</button></div>
+  <div class="db">
+    <div class="row">
+      <label class="f">你的姓名（寫入提案人／承辦）<input type="text" id="sUser"></label>
+      <label class="f">完稿語言<select id="sLang"><option value="auto">自動（依廠商語言）</option><option value="zh">中文</option><option value="en">英文</option><option value="both">中英並列</option></select></label>
+    </div>
+    <h2 style="margin-top:16px">Gemini API</h2>
+    <div class="note warn">免費層：Google 可能用送出內容改善產品，且可能有人工審閱。文字一律先去識別化並經你確認；<b>掃描影像無法遮蔽</b>。請每人用自己的帳號申請 Key。</div>
+    <div class="row">
+      <label class="f" style="flex:1;min-width:260px">API Key（只存在本機瀏覽器）<input type="password" id="sKey" placeholder="AIza..."></label>
+      <label class="f">模型<input type="text" id="sModel" list="mList" style="width:210px"><datalist id="mList"></datalist></label>
+      <button class="b" id="sList">載入可用模型</button><button class="b" id="sTest">測試連線</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label class="f">每次呼叫間隔（秒）<input type="number" id="sGap" min="0" max="60" style="width:90px"></label>
+      <label style="font-size:13px"><input type="checkbox" id="sBottom"> 讓 AI 參考內部底線判斷立場（底線會隨遮蔽後內容送出）</label>
+    </div>
+    <div id="sMsg" class="muted" style="margin-top:6px"></div>
+    <h2 style="margin-top:16px">尚未存回規則檔的資料</h2>
+    <div id="sPending" class="muted"></div>
+    <div class="row" style="margin-top:8px"><button class="b" id="sWipe">清除本機所有資料</button></div>
+  </div>
+</dialog>
+
+<!-- 每月 Review -->
+<dialog id="dlgRev">
+  <div class="dh"><b>每月 Review（維護人）</b><span style="flex:1"></span><button class="b" onclick="this.closest('dialog').close()">關閉</button></div>
+  <div class="db">
+    <p class="muted" style="margin-top:0">比對上月快照與目前規則檔，列出同仁學到的待核規則、未經核准的修改、各條款被挑戰次數，匯出差異表與簡報給主管。會議決議後把「決議／決議日」填回規則檔的提案區即可轉正。</p>
+    <div class="row">
+      <label class="f">上月快照（選填）<input type="file" id="rPrev" accept=".xlsx,.xlsm"></label>
+      <label class="f">月份<input type="month" id="rMonth"></label>
+      <label class="f">部門<input type="text" id="rDept" placeholder="採購處"></label>
+      <button class="b p" id="rXlsx">匯出差異表</button><button class="b p" id="rPptx">匯出簡報</button>
+    </div>
+    <div id="rOut" style="margin-top:10px"></div>
+  </div>
+</dialog>
+<div id="toast"></div>
+
+<script>/*__EXCELJS__*/</script>
+<script>/*__XLSX__*/</script>
+<script>/*__JSZIP__*/</script>
+<script>/*__PPTX__*/</script>
+<script>/*__PDFJS__*/</script>
+<script>/*__PDFJS_WORKER__*/</script>
+<script>const CMAPS = /*__CMAPS__*/;</script>
+<script>/*__DEID__*/</script>
+<script>/*__CORE__*/</script>
+<script>/*__ENGINE__*/</script>
+<script>
+"use strict";
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const LS = { get(k, d) { try { const v = localStorage.getItem("dr." + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("dr." + k, JSON.stringify(v)); } catch (e) { toast("瀏覽器無法儲存本機資料：" + e.message); } } };
+const S = {
+  settings: Object.assign({ user: "", key: "", model: "gemini-2.5-flash", gap: 6, bottom: true, lang: "auto" }, LS.get("settings", {})),
+  master: LS.get("master", null), masterName: LS.get("masterName", ""), masterAt: LS.get("masterAt", ""), handle: null,
+  pending: LS.get("pending", []), logs: LS.get("logs", []), dict: LS.get("dict", []),
+  sess: null,
+};
+function save() { LS.set("pending", S.pending); LS.set("logs", S.logs); LS.set("dict", S.dict); LS.set("settings", S.settings); renderBadge(); }
+function toast(m, ms) { const t = $("#toast"); t.textContent = m; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", ms || 2800); }
+const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function download(data, name, type) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([data], { type: type || "application/octet-stream" })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
+const XLSX_T = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", DOCX_T = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+// pdf.js（內嵌 worker 與中文 CMap）
+class EmbeddedCMapReaderFactory { async fetch({ name }) { const b = CMAPS[name]; if (!b) throw new Error("未內嵌的 CMap：" + name); const s = atob(b), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return { cMapData: a, compressionType: pdfjsLib.CMapCompressionType.BINARY }; } }
+const openPdf = buf => pdfjsLib.getDocument({ data: new Uint8Array(buf.slice(0)), useWorkerFetch: false, CMapReaderFactory: EmbeddedCMapReaderFactory }).promise;
+
+// ───────── 規則檔 ─────────
+function masterView() {
+  if (!S.master) return null;
+  const logs = S.master.logs.concat(S.logs.map(r => Object.fromEntries(Core.SCHEMA.回覆紀錄.map((k, i) => [k, r[i]]))));
+  return Object.assign({}, S.master, { logs });
+}
+function allDict() { return Deid.dictMerge(S.master ? S.master.dict : [], S.dict).dict; }
+function setMaster(m, name) {
+  S.master = { clauses: m.clauses, proposals: m.proposals, logs: m.logs, dict: m.dict, changes: m.changes };
+  S.masterName = name; S.masterAt = new Date().toLocaleString("zh-TW");
+  LS.set("master", S.master); LS.set("masterName", name); LS.set("masterAt", S.masterAt);
+  renderBadge(); renderIntro();
+}
+function renderBadge() {
+  const n = S.pending.length + S.logs.length + S.dict.length;
+  if (!S.master) $("#ruleBadge").innerHTML = "尚未開啟規則檔（商務條款底線 MasterFile.xlsx）";
+  else {
+    const pend = S.master.proposals.filter(p => !p.決議).length + S.pending.length;
+    $("#ruleBadge").innerHTML = `規則檔 <b>${esc(S.masterName)}</b>｜${S.master.clauses.length} 條款｜待核規則 <b>${pend}</b>｜累積回覆 ${S.master.logs.length + S.logs.length} 筆｜讀取於 ${esc(S.masterAt)}`;
+  }
+  $("#btnSaveRules").disabled = !n;
+  $("#btnSaveRules").textContent = n ? `存回規則檔（${n} 筆）` : "存回規則檔";
+}
+function renderIntro() {
+  const el = $("#intro");
+  if (!S.master) { el.style.display = ""; el.innerHTML = `<b>第一次使用：</b>先按右上「開啟規則檔」，選 SharePoint 同步資料夾裡的「商務條款底線 MasterFile.xlsx」。之後 AI 會依裡面的底線與範例回覆，你給的意見也會學回這份檔案。${S.settings.key ? "" : "<br>另外請到「設定」貼上你的 Gemini API Key。"}`; return; }
+  if (!S.settings.key) { el.style.display = ""; el.innerHTML = `請到「設定」貼上你的 Gemini API Key 後即可開始。`; return; }
+  el.style.display = "none";
+}
+async function readMasterBuf(buf, name) {
+  const m = Core.parseMaster(XLSX, buf);
+  if (m.errors.length) throw new Error(m.errors.join("；") + "（請確認是商務條款底線 Master File）");
+  return m;
+}
+async function openRules() {
+  try {
+    if (window.showOpenFilePicker) {
+      const [h] = await window.showOpenFilePicker({ types: [{ description: "Excel", accept: { [XLSX_T]: [".xlsx", ".xlsm"] } }] });
+      const f = await h.getFile(); const m = await readMasterBuf(await f.arrayBuffer(), f.name);
+      S.handle = h; setMaster(m, f.name); idbPut("handle", h);
+      toast("已開啟規則檔，之後可直接存回");
+    } else $("#ruleIn").click();
+  } catch (e) { if (e.name !== "AbortError") { console.warn(e); $("#ruleIn").click(); } }
+}
+$("#btnOpenRules").onclick = openRules;
+$("#ruleIn").onchange = async e => { const f = e.target.files[0]; if (!f) return; try { setMaster(await readMasterBuf(await f.arrayBuffer(), f.name), f.name); S.handle = null; toast("已讀取規則檔"); } catch (er) { toast(er.message, 5000); } e.target.value = ""; };
+
+// IndexedDB 記住檔案位置（下次一鍵重新讀取最新版）
+function idb() { return new Promise((ok, no) => { const r = indexedDB.open("dr", 1); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); }); }
+async function idbPut(k, v) { try { const db = await idb(); db.transaction("kv", "readwrite").objectStore("kv").put(v, k); } catch (e) { } }
+async function idbGet(k) { try { const db = await idb(); return await new Promise(ok => { const q = db.transaction("kv").objectStore("kv").get(k); q.onsuccess = () => ok(q.result); q.onerror = () => ok(null); }); } catch (e) { return null; } }
+async function refreshFromHandle(silent) {
+  const h = S.handle || await idbGet("handle"); if (!h) return false;
+  try {
+    if ((await h.queryPermission({ mode: "readwrite" })) !== "granted" && (await h.requestPermission({ mode: "readwrite" })) !== "granted") return false;
+    const f = await h.getFile(); setMaster(await readMasterBuf(await f.arrayBuffer(), f.name), f.name); S.handle = h;
+    if (!silent) toast("已重新讀取最新規則檔"); return true;
+  } catch (e) { return false; }
+}
+
+async function saveRules() {
+  const user = S.settings.user || "未具名";
+  const proposals = S.pending.map(p => [p.id, p.at, p.by || user, p.type, p.clauseId, p.field, p.oldVal || "", p.newVal, p.reason || "", "", "", ""]);
+  const dict = S.dict.map(d => [d.type, d.value, d.by || user, d.at || Core.today()]);
+  const payload = { proposals, logs: S.logs, dict };
+  try {
+    let h = S.handle || await idbGet("handle"), buf, name;
+    if (h && (await h.queryPermission({ mode: "readwrite" }) === "granted" || await h.requestPermission({ mode: "readwrite" }) === "granted")) {
+      const f = await h.getFile(); name = f.name;
+      const r = await Engine.mergeIntoMaster(ExcelJS, await f.arrayBuffer(), payload); buf = r.buf;
+      const w = await h.createWritable(); await w.write(buf); await w.close();
+      toast(`已存回 ${name}：提案 ${r.res.proposals}、回覆紀錄 ${r.res.logs}、詞庫 ${r.res.dict}`, 4000);
+    } else {
+      const f = await pickFile(".xlsx,.xlsm", "請選擇 SharePoint 上「最新版」的規則檔（會把你的資料合併進去後下載，再覆蓋回原位置）");
+      if (!f) return; name = f.name;
+      const r = await Engine.mergeIntoMaster(ExcelJS, await f.arrayBuffer(), payload); buf = r.buf;
+      download(buf, name, XLSX_T);
+      toast(`已下載合併後的 ${name}，請覆蓋回 SharePoint 原檔`, 6000);
+    }
+    S.pending = []; S.logs = []; S.dict = []; save();
+    setMaster(await readMasterBuf(buf, name), name);
+  } catch (e) { console.error(e); toast("存回失敗：" + e.message, 6000); }
+}
+function pickFile(accept, msg) { return new Promise(ok => { if (msg) toast(msg, 5000); const i = document.createElement("input"); i.type = "file"; i.accept = accept; i.onchange = () => ok(i.files[0] || null); i.click(); }); }
+$("#btnSaveRules").onclick = saveRules;
+
+// ───────── 拖入廠商檔 ─────────
+const drop = $("#drop");
+drop.onclick = () => $("#fileIn").click();
+$("#fileIn").onchange = e => { if (e.target.files[0]) ingest(e.target.files[0]); e.target.value = ""; };
+["dragenter", "dragover"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("hover"); }));
+["dragleave", "drop"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); if (ev === "drop" || e.target === drop) drop.classList.remove("hover"); }));
+document.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) ingest(f); });
+
+function newSession(file, buf) {
+  S.sess = { file, buf, name: file.name, ing: null, items: [], terms: [], images: null, lang: S.settings.lang, project: "", vendor: "", exported: false };
+}
+async function ingest(file) {
+  if (S.sess && S.sess.items.some(i => i.zh || i.en) && !S.sess.exported && !confirm("目前這份還沒產出完稿，確定換下一份？")) return;
+  const name = file.name, ext = name.toLowerCase().split(".").pop(), buf = await file.arrayBuffer();
+  // 拖進來的是規則檔
+  if (["xlsx", "xlsm"].includes(ext)) {
+    try { const wb = XLSX.read(new Uint8Array(buf), { type: "array", bookSheets: true }); if (wb.SheetNames.includes("條款庫")) { setMaster(await readMasterBuf(buf, name), name); toast("已讀取規則檔（拖入的檔案只能讀取；要直接存回請用「開啟規則檔」）", 5000); return; } } catch (e) { }
+  }
+  if (!S.master) { toast("請先開啟規則檔", 4000); return openRules(); }
+  if (!S.settings.key) { toast("請先到「設定」貼上 Gemini API Key", 4000); return openSettings(); }
+  await refreshFromHandle(true);
+  newSession(file, buf);
+  const s = S.sess;
+  renderSession("讀取中…"); $("#items").innerHTML = "";
+  try {
+    if (["xlsx", "xlsm", "xls"].includes(ext)) { s.ing = await Engine.ingestExcel(ExcelJS, XLSX, buf, name); s.items = s.ing.items; }
+    else if (ext === "docx") {
+      s.ing = await Engine.ingestDocx(JSZip, buf);
+      if (s.ing.items.length) s.items = s.ing.items; else s.items = localSplit(s.ing.text);
+      if (!s.items.length) { s.needSplit = s.ing.text; }
+    } else if (ext === "pdf") {
+      const pdf = await openPdf(buf); let text = "";
+      for (let p = 1; p <= pdf.numPages; p++) { const c = await (await pdf.getPage(p)).getTextContent(); const lines = new Map(); for (const it of c.items) { const y = Math.round(it.transform[5]); if (!lines.has(y)) lines.set(y, []); lines.get(y).push(it); } text += [...lines.keys()].sort((a, b) => b - a).map(y => lines.get(y).sort((a, b) => a.transform[4] - b.transform[4]).map(i => i.str).join("")).join("\n") + "\n"; }
+      s.ing = { kind: "pdf" };
+      if (text.replace(/\s/g, "").length < 10) { s.ing.kind = "scan"; s.images = await pdfImages(pdf); s.ing.note = `掃描影像 PDF（${pdf.numPages} 頁），需送 AI 辨識`; }
+      else { s.items = localSplit(text); if (!s.items.length) s.needSplit = text; s.ing.note = "文字型 PDF"; }
+    } else if (["jpg", "jpeg", "png"].includes(ext)) { s.ing = { kind: "scan", note: "圖片，需送 AI 辨識" }; s.images = [await imgToJpeg(file)]; }
+    else throw new Error("不支援的格式：" + ext);
+    renderSession();
+  } catch (e) { console.error(e); renderSession(); $("#session").insertAdjacentHTML("beforeend", `<div class="note bad">讀取失敗：${esc(e.message)}</div>`); }
+}
+function localSplit(text) {
+  const items = Core.parseDeviations(text).filter(x => /^\d+$/.test(x.no) && x.text.replace(/\s/g, "").length > 4);
+  return items.length >= 2 ? items.map(x => ({ no: x.no, ref: x.ref || "", text: x.text.trim() })) : [];
+}
+async function pdfImages(pdf) {
+  const out = [], n = Math.min(pdf.numPages, 20);
+  for (let p = 1; p <= n; p++) {
+    const page = await pdf.getPage(p), v0 = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale: Math.min(2.2, 1700 / Math.max(v0.width, v0.height)) });
+    const c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: x, viewport: vp }).promise; out.push({ page: p, data: c.toDataURL("image/jpeg", .85).split(",")[1] });
+  }
+  return out;
+}
+async function imgToJpeg(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error("圖片讀取失敗")); i.src = url; });
+    const sc = Math.min(1, 2000 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+    c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return { page: 1, data: c.toDataURL("image/jpeg", .85).split(",")[1] };
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function renderSession(msg) {
+  const s = S.sess; if (!s) { $("#session").innerHTML = ""; return; }
+  const kindTxt = { excel: "Excel", docx: "Word", pdf: "PDF", scan: "掃描影像" }[s.ing && s.ing.kind] || "";
+  const outTxt = !s.ing ? "" : s.ing.kind === "excel" ? (s.ing.sourceXlsx ? "完稿：原 Excel 加上回覆欄" : "完稿：轉成 .xlsx 並加上回覆欄") : s.ing.kind === "docx" ? "完稿：原 Word 填入回覆欄" : "完稿：Excel 澄清表";
+  const drafted = s.items.some(i => i.zh || i.en);
+  $("#session").innerHTML = `<div class="card">
+    <div class="row"><h2 style="margin:0">${esc(s.name)}</h2><span class="chip o">${esc(kindTxt)}</span>${msg ? `<span class="muted">${esc(msg)}</span>` : ""}<span style="flex:1"></span><span class="muted">${esc(outTxt)}</span></div>
+    ${s.ing && s.ing.note ? `<div class="muted" style="margin-top:4px">${esc(s.ing.note)}</div>` : ""}
+    ${s.images ? `<div class="note bad">這是掃描影像：<b>影像中的公司名、金額無法遮蔽</b>，會以原圖送到 Gemini 免費層。請確認文件機密等級允許後再送出。</div><div class="thumbs">${s.images.slice(0, 8).map(i => `<img src="data:image/jpeg;base64,${i.data}">`).join("")}</div>` : ""}
+    <div class="row" style="margin-top:10px">
+      <label class="f">專案名稱（會遮蔽）<input type="text" id="sesProject" value="${esc(s.project)}"></label>
+      <label class="f">廠商名稱（會遮蔽）<input type="text" id="sesVendor" value="${esc(s.vendor)}"></label>
+      <label class="f">完稿語言<select id="sesLang">${[["auto", "自動"], ["zh", "中文"], ["en", "英文"], ["both", "中英並列"]].map(([v, t]) => `<option value="${v}" ${s.lang === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <span style="flex:1"></span>
+      ${s.items.length ? `<span class="muted">辨識出 <b>${s.items.length}</b> 項異議</span>` : s.needSplit || s.images ? `<span class="muted">需由 AI 拆出異議項目</span>` : ""}
+      <button class="b p" id="btnDraft" ${!s.ing ? "disabled" : ""}>${drafted ? "全部重新草擬" : s.items.length ? "AI 草擬回覆" : "AI 辨識並草擬回覆"}</button>
+    </div></div>`;
+  $("#sesProject").onchange = e => s.project = e.target.value.trim();
+  $("#sesVendor").onchange = e => s.vendor = e.target.value.trim();
+  $("#sesLang").onchange = e => { s.lang = e.target.value; };
+  $("#btnDraft").onclick = () => draftAll();
+  renderItems();
+}
+
+// ───────── 去識別化（同一份檔案共用一組代號） ─────────
+function sessTermsFor(text) {
+  const s = S.sess, extra = [];
+  if (s.project.length >= 2) extra.push({ type: "專案", value: s.project });
+  if (s.vendor.length >= 2) extra.push({ type: "公司", value: s.vendor });
+  const cands = Deid.buildTerms(text, { dict: allDict().concat(extra) });
+  const added = [];
+  for (const c of cands) if (!s.terms.some(t => t.value === c.value)) { const t = { type: c.type, value: c.value, on: true, source: c.source }; t.code = nextCode(t.type); s.terms.push(t); added.push(t); }
+  return added;
+}
+function nextCode(type) { const used = new Set(S.sess.terms.map(t => t.code)); for (let n = 1; ; n++) { const c = `〔${type}${String(n).padStart(2, "0")}〕`; if (!used.has(c)) return c; } }
+function sessMask(text) { const r = Deid.mask(text, S.sess.terms); return { text: r.text, leaked: r.leaked, residual: Deid.residual(r.text) }; }
+function sessMap() { const m = {}; for (const t of S.sess.terms) m[t.code] = { value: t.value, type: t.type }; return m; }
+function unmask(s) { return Deid.unmask(String(s || ""), sessMap()); }
+
+// 送出確認對話框：parts 為 [{text}|{image}]；回傳 Promise<boolean>
+function confirmSend(title, builder, images) {
+  return new Promise(resolve => {
+    const dlg = $("#dlg");
+    $("#dlgTitle").textContent = title; $("#dlgType").innerHTML = Deid.TYPES.map(t => `<option>${t}</option>`).join("");
+    $("#dlgImgs").innerHTML = images ? `<div class="note bad" style="margin-top:10px">另會送出 ${images.length} 張掃描影像（無法遮蔽）。</div><div class="thumbs">${images.slice(0, 6).map(i => `<img src="data:image/jpeg;base64,${i.data}">`).join("")}</div>` : "";
+    const render = () => {
+      const raw = builder(); const m = sessMask(raw);
+      $("#dlgTerms").innerHTML = `<tr><th>遮</th><th>類別</th><th>原文</th><th>代號</th></tr>` + S.sess.terms.map((t, i) => `<tr><td><input type="checkbox" data-i="${i}" data-f="on" ${t.on ? "checked" : ""}></td><td><select data-i="${i}" data-f="type">${Deid.TYPES.map(x => `<option ${x === t.type ? "selected" : ""}>${x}</option>`).join("")}</select></td><td>${esc(t.value)}</td><td>${esc(t.code)}</td></tr>`).join("") + (S.sess.terms.length ? "" : `<tr><td colspan="4" class="muted">未偵測到需遮蔽的詞，請仍逐字檢查右側內容。</td></tr>`);
+      $("#dlgBody").innerHTML = esc(m.text).replace(/〔[^〔〕]{1,4}\d{2,3}〕/g, x => `<mark>${x}</mark>`);
+      $("#dlgWarn").innerHTML = (m.leaked.length ? `<div class="note bad">遮蔽異常，仍殘留：${esc(m.leaked.join("、"))}</div>` : "") + (m.residual.length ? `<div class="note warn">遮蔽後仍有疑似機密：${esc(m.residual.map(r => r.value).join("、"))}，請勾選加入或確認無妨。</div>` : "");
+      $("#dlgInfo").textContent = `已遮蔽 ${S.sess.terms.filter(t => t.on).length} 個詞`;
+      $("#dlgOk").checked = false; $("#dlgSend").disabled = true; dlg._leak = m.leaked.length;
+    };
+    $("#dlgTerms").onchange = e => { const i = e.target.dataset.i; if (i === undefined) return; const t = S.sess.terms[+i]; if (e.target.dataset.f === "on") t.on = e.target.checked; else { t.type = e.target.value; t.code = nextCode(t.type); } render(); };
+    $("#dlgAdd").onclick = () => {
+      const v = String(window.getSelection()).trim();
+      if (v.length < 2) return toast("請先在右側內容反白要遮的詞（至少 2 字）");
+      if (/〔|〕/.test(v)) return toast("不可包含代號");
+      if (S.sess.terms.some(t => t.value === v)) return toast("已在清單中");
+      const t = { type: $("#dlgType").value, value: v, on: true, source: "手動" }; t.code = nextCode(t.type); S.sess.terms.push(t);
+      if ($("#dlgDict").checked && !allDict().some(d => d.value === v)) { S.dict.push({ type: t.type, value: v, by: S.settings.user, at: Core.today() }); save(); }
+      render();
+    };
+    $("#dlgBody").onmouseup = () => { const v = String(window.getSelection()).trim(); if (v) $("#dlgType").value = Deid.guessType(v); };
+    $("#dlgOk").onchange = () => { $("#dlgSend").disabled = !$("#dlgOk").checked || dlg._leak; };
+    $("#dlgSend").onclick = () => { dlg.close(); resolve(true); };
+    $("#dlgCancel").onclick = () => { dlg.close(); resolve(false); };
+    dlg.oncancel = () => resolve(false);
+    render(); dlg.showModal();
+  });
+}
+
+async function gemini(system, parts, temperature) {
+  const text = await Core.callGemini({ key: S.settings.key, model: S.settings.model, body: Engine.geminiBody(system, parts, temperature),
+    onRetry: (n, w, code) => toast(`Gemini ${code}，${Math.round(w / 1000)} 秒後重試（第 ${n} 次）`, 4000) });
+  return Engine.parseJSON(text);
+}
+
+// ───────── 草擬 ─────────
+async function draftAll() {
+  const s = S.sess;
+  try {
+    if (!s.items.length) {
+      // 由 AI 拆項
+      const raw = s.needSplit || "";
+      sessTermsFor(raw + "\n" + s.name);
+      const ok = await confirmSend(s.images ? "送出確認：掃描影像辨識" : "送出確認：拆出異議項目", () => s.images ? "（請從附上的影像拆出異議項目）" : `檔名：${s.name}\n\n${raw}`, s.images);
+      if (!ok) return;
+      renderSession("AI 拆項中…");
+      const parts = [];
+      if (s.images) s.images.forEach(im => { parts.push({ text: `第${im.page}頁：` }); parts.push({ inline_data: { mime_type: "image/jpeg", data: im.data } }); });
+      else parts.push({ text: sessMask(`檔名：${s.name}\n\n${raw}`).text + Deid.PROMPT_NOTE });
+      const j = await gemini(Engine.SPLIT_SYSTEM, parts, 0);
+      s.items = (j.items || []).map((x, i) => ({ no: Engine.str(x.no) || String(i + 1), ref: unmask(x.ref), text: unmask(x.text) })).filter(x => x.text);
+      if (!s.items.length) throw new Error("AI 沒有拆出任何項目");
+      s.splitByAI = true; s.confirmedOnce = true;
+      if (S.settings.gap) await sleep(S.settings.gap * 1000);
+    }
+    s.items.forEach(it => { it.cands = Core.matchClauses(it.text + " " + it.ref, S.master.clauses.filter(c => c.狀態 !== "停用"), 2); it.hint = it.cands.map(c => c.id).join("/"); });
+    const mv = masterView(), chunks = [];
+    for (let i = 0; i < s.items.length; i += 10) chunks.push(s.items.slice(i, i + 10));
+    const build = ch => Engine.draftUserText(ch, ch.flatMap(it => it.cands.map(c => c.id)), mv, S.pending, S.settings.bottom);
+    const all = chunks.map(build).join("\n\n=====\n\n");
+    sessTermsFor(all + "\n" + s.name);
+    const ok = await confirmSend("送出確認：AI 草擬回覆", () => chunks.map(build).join("\n\n=====\n\n"), s.confirmedOnce || !s.images ? null : s.images);
+    if (!ok) return;
+    s.confirmedOnce = true;
+    for (let ci = 0; ci < chunks.length; ci++) {
+      renderSession(`AI 草擬中（${ci + 1}/${chunks.length}）…`);
+      const ch = chunks[ci];
+      const j = await gemini(Engine.DRAFT_SYSTEM, [{ text: sessMask(build(ch)).text + Deid.PROMPT_NOTE }], 0.3);
+      const byNo = new Map((j.items || []).map(x => [Engine.str(x.no).replace(/[()（）]/g, ""), x]));
+      ch.forEach((it, k) => {
+        const x = byNo.get(String(it.no)) || (j.items || [])[k];
+        if (!x) { it.error = "AI 未回覆此項"; return; }
+        applyAI(it, x); it.ai = { zh: it.zh, en: it.en }; it.agreed = false; it.error = "";
+      });
+      if (ci < chunks.length - 1 && S.settings.gap) await sleep(S.settings.gap * 1000);
+    }
+    renderSession(); toast("草擬完成：逐項按「同意」或給意見");
+  } catch (e) { console.error(e); renderSession(); toast("失敗：" + e.message, 6000); }
+}
+function applyAI(it, x) {
+  const ids = S.master.clauses.map(c => c.條款ID);
+  it.clauseId = ids.includes(Engine.str(x.clauseId)) ? Engine.str(x.clauseId) : (it.clauseId || "");
+  it.stance = Engine.STANCES.includes(x.stance) ? x.stance : (x.stance || "");
+  it.bottom = Engine.str(x.bottom);
+  it.zh = unmask(x.zh); it.en = unmask(x.en); it.reason = unmask(x.reason);
+  const c = it.clauseId ? Engine.effectiveClause(masterView(), S.pending, it.clauseId) : null;
+  it.leak = Engine.bottomLeak(it, c);
+  it.left = Deid.leftTokens(it.zh + it.en);
+}
+
+// ───────── 逐項卡片 ─────────
+function chipStance(it) {
+  const m = { "接受": "ok", "有條件接受": "o", "拒絕維持原條款": "", "需升級": "warn" };
+  return it.stance ? `<span class="chip ${m[it.stance] ?? ""}">${esc(it.stance)}</span>` : "";
+}
+function chipBottom(it) {
+  const m = { "可接受": "ok", "需升級": "warn", "不可接受": "bad" };
+  return it.bottom ? `<span class="chip ${m[it.bottom] || ""}">底線：${esc(it.bottom)}</span>` : "";
+}
+function renderItems() {
+  const s = S.sess; if (!s) return;
+  const clauses = S.master ? S.master.clauses.filter(c => c.狀態 !== "停用") : [];
+  $("#items").innerHTML = s.items.map((it, i) => {
+    const has = it.zh || it.en;
+    return `<div class="item ${it.agreed ? "done" : ""}" data-i="${i}">
+      <div class="item-h"><b>項次 ${esc(it.no)}</b>${it.ref ? `<span class="muted">條次 ${esc(it.ref)}</span>` : ""}
+        <select data-f="clauseId" style="max-width:240px"><option value="">（未對應條款）</option>${clauses.map(c => `<option value="${esc(c.條款ID)}" ${c.條款ID === it.clauseId ? "selected" : ""}>${esc(c.條款ID)} ${esc(c.條款名稱)}</option>`).join("")}</select>
+        ${chipStance(it)}${chipBottom(it)}
+        ${it.leak && it.leak.length ? `<span class="chip bad" title="回覆出現了內部底線的數字，但廠商原文沒有">⚠ 可能洩漏底線：${esc(it.leak.join("、"))}</span>` : ""}
+        ${it.left && it.left.length ? `<span class="chip bad">⚠ 未還原代號 ${esc(it.left.join(" "))}</span>` : ""}
+        <span style="flex:1"></span>${it.agreed ? `<span class="chip ok">✔ 已同意</span>` : ""}</div>
+      <div class="item-b">
+        <div><div class="lbl">廠商異議</div><div class="vend">${esc(it.text)}</div>
+          ${it.reason ? `<div class="reason">AI 判斷：${esc(it.reason)}</div>` : ""}${it.error ? `<div class="note bad">${esc(it.error)}</div>` : ""}</div>
+        <div>${has ? `
+          <div class="lbl">我方回覆（中）</div><textarea data-f="zh" rows="3">${esc(it.zh)}</textarea>
+          <div class="lbl">Our Response (EN)</div><textarea data-f="en" rows="3">${esc(it.en)}</textarea>
+          <div class="row" style="margin-top:8px">
+            <button class="b ${it.agreed ? "" : "ok"}" data-a="agree">${it.agreed ? "取消同意" : "✔ 同意"}</button>
+            <input type="text" data-f="fb" placeholder="給 AI 的意見，例如：可同意 60 天，但需提供保證／語氣軟一點／這類一律拒絕" style="flex:1;min-width:220px" value="${esc(it.fb || "")}">
+            <button class="b p" data-a="revise">AI 調整</button>
+          </div>
+          ${it.rule ? `<div class="rule">🧠 <b>可學成規則：</b>${esc(it.rule.summary || "")}<br><span class="muted">${esc(it.rule.clauseId)} ${esc((S.master.clauses.find(c => c.條款ID === it.rule.clauseId) || {}).條款名稱 || "")}｜${esc(it.rule.field)}</span><br>${esc(it.rule.value)}
+            <div class="row" style="margin-top:6px"><button class="b p" data-a="learn">記住這條規則（待主管核定）</button><button class="b" data-a="skip">不用</button></div></div>` : ""}
+          ${it.learned ? `<div class="note ok">已記成待核規則：${esc(it.learned)}</div>` : ""}`
+        : `<div class="muted" style="padding-top:22px">尚未草擬</div>`}</div>
+      </div></div>`;
+  }).join("");
+  renderBar();
+}
+function renderBar() {
+  const s = S.sess, n = s ? s.items.filter(i => i.zh || i.en).length : 0;
+  $("#bar").style.display = n ? "block" : "none"; if (!n) return;
+  const a = s.items.filter(i => i.agreed).length;
+  $("#barTxt").textContent = `已同意 ${a} / ${s.items.length} 項`;
+  $("#barProg").style.width = (s.items.length ? a / s.items.length * 100 : 0) + "%";
+}
+$("#items").addEventListener("input", e => { const box = e.target.closest(".item"); if (!box) return; const it = S.sess.items[+box.dataset.i], f = e.target.dataset.f; if (["zh", "en", "fb"].includes(f)) { it[f] = e.target.value; if (f !== "fb" && it.agreed) { it.agreed = false; renderItems(); } } });
+$("#items").addEventListener("change", e => { const box = e.target.closest(".item"); if (!box) return; const it = S.sess.items[+box.dataset.i]; if (e.target.dataset.f === "clauseId") { it.clauseId = e.target.value; it.leak = Engine.bottomLeak(it, it.clauseId ? Engine.effectiveClause(masterView(), S.pending, it.clauseId) : null); renderItems(); } });
+$("#items").addEventListener("click", async e => {
+  const b = e.target.closest("[data-a]"); if (!b) return;
+  const it = S.sess.items[+b.closest(".item").dataset.i], a = b.dataset.a;
+  if (a === "agree") { it.agreed = !it.agreed; renderItems(); }
+  else if (a === "skip") { it.rule = null; renderItems(); }
+  else if (a === "learn") { learnRule(it); renderItems(); }
+  else if (a === "revise") { if (!(it.fb || "").trim()) return toast("請先輸入意見"); b.disabled = true; b.textContent = "調整中…"; await revise(it); }
+});
+async function revise(it) {
+  try {
+    const raw = Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom);
+    const added = sessTermsFor(raw);
+    const m = sessMask(raw);
+    if (added.length || m.residual.length || m.leaked.length) { if (!(await confirmSend("送出確認：意見中有新的機密詞", () => Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom)))) { renderItems(); return; } }
+    const j = await gemini(Engine.REVISE_SYSTEM, [{ text: sessMask(Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom)).text + Deid.PROMPT_NOTE }], 0.3);
+    applyAI(it, Object.assign({ clauseId: it.clauseId }, j));
+    it.agreed = false; it.history = (it.history || []).concat([{ fb: it.fb }]);
+    const r = j.rule && j.rule.field && j.rule.value ? j.rule : null;
+    it.rule = r && Engine.BOTTOM.concat(["慣用回覆_中", "慣用回覆_EN"]).includes(r.field) ? { clauseId: Engine.str(r.clauseId) || it.clauseId, field: r.field, value: unmask(r.value), summary: unmask(r.summary) } : null;
+    if (it.rule && !S.master.clauses.some(c => c.條款ID === it.rule.clauseId)) it.rule.clauseId = it.clauseId;
+    if (it.rule && !it.rule.clauseId) it.rule = null;
+    it.fb = ""; renderItems();
+  } catch (e) { console.error(e); toast("調整失敗：" + e.message, 6000); renderItems(); }
+}
+function learnRule(it) {
+  const r = it.rule, c = S.master.clauses.find(x => x.條款ID === r.clauseId);
+  S.pending.push({ id: `P${stamp()}-${(S.settings.user || "X").slice(0, 3)}-${S.pending.length + 1}`, at: Core.today(), by: S.settings.user, type: r.field.startsWith("慣用回覆") ? "新增範例" : "修改內容",
+    clauseId: r.clauseId, field: r.field, oldVal: c ? c[r.field] || "" : "", newVal: r.value, reason: `AI 自使用者意見萃取：${(it.history || []).map(h => h.fb).join("／")}；廠商異議：${Core.clip(it.text, 80)}` });
+  it.learned = `${r.clauseId}｜${r.field}：${r.value}`; it.rule = null; save();
+  toast("已記住（待主管核定）；下一份起 AI 就會套用，按「存回規則檔」分享給同仁", 5000);
+}
+
+// ───────── 產出完稿 ─────────
+$("#btnAgreeAll").onclick = () => { S.sess.items.forEach(i => { if (i.zh || i.en) i.agreed = true; }); renderItems(); };
+$("#btnExport").onclick = async () => {
+  const s = S.sess, done = s.items.filter(i => (i.zh || i.en) && i.agreed);
+  if (!done.length) return toast("尚未同意任何項目");
+  if (done.length < s.items.length && !confirm(`還有 ${s.items.length - done.length} 項未同意，只產出已同意的 ${done.length} 項？`)) return;
+  const left = [...new Set(done.flatMap(i => Deid.leftTokens(i.zh + i.en)))];
+  if (left.length && !confirm(`回覆中仍有未還原代號 ${left.join("、")}，確定產出？`)) return;
+  const leaks = done.filter(i => i.leak && i.leak.length);
+  if (leaks.length && !confirm(`項次 ${leaks.map(i => i.no).join("、")} 的回覆可能洩漏內部底線數字，確定產出？`)) return;
+  const lang = Engine.resolveLang(s.lang, s.items), base = s.name.replace(/\.[^.]+$/, "");
+  try {
+    if (s.ing.kind === "excel" && s.ing.sourceXlsx) download(await Engine.writeExcelSame(ExcelJS, s.buf, s.ing, done, lang), `${base}_回覆.xlsx`, XLSX_T);
+    else if (s.ing.kind === "excel") { const wb = XLSX.read(new Uint8Array(s.buf), { type: "array" }); const xb = XLSX.write(wb, { type: "array", bookType: "xlsx" }); download(await Engine.writeExcelSame(ExcelJS, xb, s.ing, done, lang), `${base}_回覆.xlsx`, XLSX_T); }
+    else if (s.ing.kind === "docx" && !s.splitByAI) download(await Engine.writeDocxSame(JSZip, s.buf, s.ing, done, lang), `${base}_回覆.docx`, DOCX_T);
+    else if (s.ing.kind === "docx") download(await Engine.writeDocxSame(JSZip, s.buf, Object.assign({}, s.ing, { table: -1 }), done, lang), `${base}_回覆.docx`, DOCX_T);
+    else download(await Engine.writeClarification(ExcelJS, done, { project: s.project, vendor: s.vendor }, lang), `${base}_澄清回覆.xlsx`, XLSX_T);
+  } catch (e) { console.error(e); return toast("產出失敗：" + e.message, 6000); }
+  const st = stamp();
+  done.forEach((it, k) => S.logs.push([`R${st}-${(S.settings.user || "X").slice(0, 3)}-${k + 1}`, Core.today(), S.settings.user, s.project, s.vendor, it.clauseId || "", Core.clip(it.text, 150), it.stance || "", it.zh || "", it.en || "", it.bottom === "需升級" || it.bottom === "不可接受" ? "是" : "否", "", (it.history || []).length ? "經意見調整" : ""]));
+  s.exported = true; save();
+  toast(`完稿已下載；${done.length} 筆回覆已記入經驗。記得按「存回規則檔」`, 6000);
+};
+
+// ───────── 設定 ─────────
+function openSettings() {
+  const st = S.settings;
+  $("#sUser").value = st.user; $("#sKey").value = st.key; $("#sModel").value = st.model; $("#sGap").value = st.gap; $("#sBottom").checked = st.bottom; $("#sLang").value = st.lang;
+  $("#sPending").innerHTML = `待核規則 ${S.pending.length} 條、回覆紀錄 ${S.logs.length} 筆、詞庫 ${S.dict.length} 個` + (S.pending.length ? `<table class="t" style="margin-top:6px"><tr><th>條款</th><th>欄位</th><th>內容</th><th></th></tr>${S.pending.map((p, i) => `<tr><td>${esc(p.clauseId)}</td><td>${esc(p.field)}</td><td>${esc(p.newVal)}</td><td><button class="b" data-del="${i}">刪除</button></td></tr>`).join("")}</table>` : "");
+  $("#dlgSet").showModal();
+}
+$("#btnSettings").onclick = openSettings;
+$("#sPending").onclick = e => { const i = e.target.dataset.del; if (i !== undefined) { S.pending.splice(+i, 1); save(); openSettings(); } };
+$("#dlgSet").addEventListener("change", e => {
+  const st = S.settings, id = e.target.id;
+  if (id === "sUser") st.user = e.target.value.trim(); else if (id === "sKey") st.key = e.target.value.trim(); else if (id === "sModel") st.model = e.target.value.trim();
+  else if (id === "sGap") st.gap = Math.max(0, +e.target.value || 0); else if (id === "sBottom") st.bottom = e.target.checked; else if (id === "sLang") st.lang = e.target.value; else return;
+  save(); renderIntro();
+});
+$("#sList").onclick = async () => { $("#sMsg").textContent = "讀取中…"; try { const l = await Core.listModels({ key: S.settings.key }); $("#mList").innerHTML = l.map(m => `<option value="${esc(m)}">`).join(""); $("#sMsg").textContent = `可用 ${l.length} 個模型，免費層建議 flash 系列。`; } catch (e) { $("#sMsg").textContent = "失敗：" + e.message; } };
+$("#sTest").onclick = async () => { $("#sMsg").textContent = "測試中…"; try { const t = await Core.callGemini({ key: S.settings.key, model: S.settings.model, body: { contents: [{ role: "user", parts: [{ text: "只回覆 OK" }] }] } }); $("#sMsg").textContent = "連線成功：" + t.trim().slice(0, 20); } catch (e) { $("#sMsg").textContent = "失敗：" + e.message; } };
+$("#sWipe").onclick = () => { if (confirm("清除本機設定、API Key 與尚未存回的規則／紀錄？")) { try { Object.keys(localStorage).filter(k => k.startsWith("dr.")).forEach(k => localStorage.removeItem(k)); indexedDB.deleteDatabase("dr"); } catch (e) { } location.reload(); } };
+
+// ───────── 每月 Review ─────────
+$("#btnReview").onclick = () => { const d = new Date(); if (!$("#rMonth").value) $("#rMonth").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; $("#dlgRev").showModal(); };
+async function buildReview() {
+  await refreshFromHandle(true);
+  if (!S.master) throw new Error("請先開啟規則檔");
+  const f = $("#rPrev").files[0]; let prev = null;
+  if (f) { prev = Core.parseMaster(XLSX, await f.arrayBuffer()); if (prev.errors.length) throw new Error(prev.errors.join("；")); }
+  const R = Core.monthlyReview({ prev, curr: S.master, month: $("#rMonth").value, dept: $("#rDept").value });
+  $("#rOut").innerHTML = `<div class="note">本月回覆 ${R.logs.length}｜待核規則 ${R.pending.length}｜未經核准變更 ${R.unauthorized.length}｜範例待核 ${R.draft.length}${S.pending.length ? `<br>注意：你本機還有 ${S.pending.length} 條待核規則尚未存回規則檔，未列入。` : ""}</div>`;
+  return R;
+}
+$("#rXlsx").onclick = async () => { try { const R = await buildReview(); XLSX.writeFile(Core.reviewWorkbook(XLSX, R), `條款底線月度差異表_${R.month}.xlsx`); } catch (e) { toast(e.message, 5000); } };
+$("#rPptx").onclick = async () => { try { const R = await buildReview(); await Core.buildDeck(PptxGenJS, R).pptx.writeFile({ fileName: `條款底線月度檢討_${R.month}.pptx` }); } catch (e) { toast(e.message, 5000); } };
+
+window.addEventListener("beforeunload", e => { if (S.sess && S.sess.items.some(i => i.zh || i.en) && !S.sess.exported) { e.preventDefault(); e.returnValue = ""; } });
+renderBadge(); renderIntro();
+idbGet("handle").then(h => { if (h && S.master) $("#ruleBadge").insertAdjacentHTML("beforeend", "｜拖入廠商檔時會自動重新讀取最新版"); });
+</script>
+</body>
+</html>
