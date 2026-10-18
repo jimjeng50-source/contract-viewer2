@@ -1,4 +1,4 @@
-# HANDOFF — 交接文件（2026-10-17 更新）
+# HANDOFF — 交接文件（2026-10-18 更新）
 
 > 給接手的新對話：先讀本檔 → `CLAUDE.md`（工作守則，必遵守）→ `lessons/` 各檔首行摘要 →
 > 要做 AI 審查前讀 `review-guidelines.md`。本檔是狀態快照；守則與準則以上述檔案為準。
@@ -10,6 +10,8 @@
 核心交付物是**單機離線版 HTML**（`dist/合約審查_單機版.html`，約 3MB，雙擊即用）。
 
 ## 二、Repo 狀態
+
+- **2026-10-18 起本 repo 為唯一合約審查工具**；`jimjeng50-source/contract-reviewer`（Python 原型）已併入，該 repo README 已改為導引至此，不再開發
 
 - 開發分支：`claude/contract-review-automation-jq980b`（**全部工作都在這裡，共 10 個 commit**）
 - `main`：仍是 initial commit，**從未 merge、未開 PR**——使用者沒要求過，勿自行開 PR
@@ -28,8 +30,10 @@
 
 ## 四、單機版功能現況（已全部實作並通過 e2e）
 
-1. **拖放審查** .docx/.pdf（docx=JSZip 解析；PDF=pdf.js 內嵌全部中文 CMap，掃描檔需先 OCR）
-2. **規則引擎**：required/forbidden/consistency/builtin 四型，27 條內建規則（共用＋訂購單＋承攬）
+1. **拖放審查** .docx/.pdf/.jpg/.png（docx=JSZip 解析；PDF=pdf.js 內嵌全部中文 CMap）。
+   **掃描檔**（無文字層 PDF／圖片）：使用者勾選確認「影像不會遮蔽」後，轉 JPEG 送 Claude 逐頁轉錄，
+   再走同一套規則／摘要（每批 8 頁、上限 30 頁、標註「AI 辨識」位置與成本）；mock 已測，真實 key 未測
+2. **規則引擎**：required/forbidden/consistency/builtin 四型，33 條內建規則（共用＋訂購單＋承攬；2026-10 由 contract-reviewer 併入 6 條，見 lessons/20261018-merge-python-prototype.md）
 3. **內建檢查**：金額國字（大寫壹貳參＋小寫一二三皆支援）↔ 阿拉伯數字比對、日期有效性、空欄偵測
 4. **商務摘要（語意判讀，非關鍵字節錄）**：交貨品項、合約金額（評分挑總價、含稅/未稅）、
    簽約日期（落款/訂單日期/斜線日期）、交期、付款（期款結構＋加總應為 100% 檢查）、

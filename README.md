@@ -58,7 +58,7 @@ python review.py check 合約.docx --type subcontract -o 審查報告.md
 
 限制：
 - 舊版 `.doc` 請先另存為 `.docx`。
-- 掃描影像 PDF 需先 OCR 成文字型 PDF。
+- 掃描影像 PDF／JPG／PNG：單機版可在使用者確認後送 Claude 辨識文字再審查（影像無法去識別化，需確認機密等級）；CLI／網頁版仍需先 OCR 成文字型 PDF。
 - PDF 抽字可能遺失全形空白，空欄偵測敏感度較 .docx 低（詳見 `lessons/`），有原始 .docx 時優先審 .docx。
 
 ## 商務摘要（語意判讀）

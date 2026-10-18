@@ -65,6 +65,8 @@
   .clean { color: var(--ok); background: var(--ok-bg); padding: 10px 12px;
            border-radius: 8px; display: inline-block; }
   .error-msg { color: var(--err); }
+  .scan-box { border: 1px solid var(--line); border-left: 3px solid var(--warn, #b7791f); border-radius: 6px; padding: 10px 12px; margin: 8px 0; font-size: 14px; }
+  .scan-box .controls { margin-top: 8px; }
   details summary { cursor: pointer; font-weight: 600; }
   .form-grid { display: grid; grid-template-columns: 140px 1fr; gap: 10px 12px;
                margin-top: 12px; max-width: 640px; }
@@ -93,9 +95,9 @@
     <div id="drop">
       <strong>把 Word（.docx）或 PDF 合約拖到這裡</strong><br>
       或點一下選擇檔案（可一次多份）<br>
-      <span style="font-size:12px">訂購單合約／發包承攬契約皆可，預設自動判斷類型</span>
+      <span style="font-size:12px">訂購單合約／發包承攬契約皆可，預設自動判斷類型；掃描檔（影像 PDF／JPG／PNG）可改由 AI 辨識文字後審查</span>
     </div>
-    <input type="file" id="file-input" accept=".docx,.pdf" multiple hidden>
+    <input type="file" id="file-input" accept=".docx,.pdf,.jpg,.jpeg,.png" multiple hidden>
     <div class="controls">
       <label>文件類型
         <select id="doc-type">
@@ -373,6 +375,15 @@ class EmbeddedCMapReaderFactory {
   }
 }
 
+// 掃描影像（無文字層）：無法本機抽字與去識別化，改由使用者確認後送 AI 辨識
+class ScannedError extends Error {}
+const IMAGE_SUFFIXES = ['.jpg', '.jpeg', '.png'];
+
+async function openPdf(file) {
+  const data = new Uint8Array(await file.arrayBuffer());
+  return pdfjsLib.getDocument({ data, useWorkerFetch: false, CMapReaderFactory: EmbeddedCMapReaderFactory }).promise;
+}
+
 async function extractPdf(file) {
   const data = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjsLib.getDocument({
@@ -400,7 +411,7 @@ async function extractPdf(file) {
     }
   }
   if (!segments.length) {
-    throw new Error('無法抽取任何文字，可能是掃描影像 PDF，請先 OCR 成文字型 PDF。');
+    throw new ScannedError(`抽不到任何文字（共 ${pdf.numPages} 頁），判定為掃描影像 PDF。`);
   }
   return segments;
 }
@@ -991,13 +1002,15 @@ function detectMainPageLimit(segments) {
   return m ? parseInt(m[1], 10) : null;
 }
 
-async function reviewFile(file, docTypeChoice, mainOnly = true) {
+async function reviewFile(file, docTypeChoice, mainOnly = true, presetSegments = null) {
   const suffix = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
   let segments;
-  if (suffix === '.docx') segments = await extractDocx(file);
+  if (presetSegments) segments = presetSegments;
+  else if (IMAGE_SUFFIXES.includes(suffix)) throw new ScannedError('圖片檔沒有文字層。');
+  else if (suffix === '.docx') segments = await extractDocx(file);
   else if (suffix === '.pdf') segments = await extractPdf(file);
   else if (suffix === '.doc') throw new Error('不支援舊版 .doc，請先另存為 .docx。');
-  else throw new Error(`不支援的格式 ${suffix}（僅 .docx/.pdf）。`);
+  else throw new Error(`不支援的格式 ${suffix}（僅 .docx/.pdf/.jpg/.png）。`);
   let scopeNote = '';
   if (mainOnly && segments.some(s => s.page)) {
     const limit = detectMainPageLimit(segments);
@@ -1246,6 +1259,20 @@ async function review(files) {
     card.className = 'card file-card';
     try {
       const r = await reviewFile(file, docTypeChoice, $('#main-only').checked);
+      renderResultCard(card, file.name, r);
+    } catch (err) {
+      if (err instanceof ScannedError) renderScannedCard(card, file, err.message);
+      else card.innerHTML = `<h2>${esc(file.name)}</h2><p class="error-msg">無法審查：${esc(err.message)}</p>`;
+    }
+    resultsEl.prepend(card);
+  }
+  toast('審查完成');
+}
+
+function renderResultCard(card, fileName, r, extraNote = '') {
+  const file = { name: fileName };
+  {
+    {
       recordLogEntry(file.name, r);
       refreshStats();
       const counts = { error: 0, warning: 0, info: 0 };
@@ -1256,6 +1283,7 @@ async function review(files) {
         <div class="sub">${esc(DOC_TYPES[r.docType])}．錯誤 ${counts.error}、警告 ${counts.warning}、提示 ${counts.info}` +
         (r.suppressed ? `．已自動略過 ${r.suppressed} 項學習過的誤報` : '') +
         (r.scopeNote ? `<br>📄 ${esc(r.scopeNote)}` : '') +
+        (extraNote ? `<br>⚠️ ${esc(extraNote)}` : '') +
         `　<button class="deid-btn" data-idx="${deidIdx}" ` +
         `title="本機替換公司名/金額/統編等為代號，產出可上傳的文字檔＋留在本機的對照表">` +
         `🔒 去識別化匯出</button>` +
@@ -1283,12 +1311,163 @@ async function review(files) {
         html += `</table>`;
       }
       card.innerHTML = html;
-    } catch (err) {
-      card.innerHTML = `<h2>${esc(file.name)}</h2><p class="error-msg">無法審查：${esc(err.message)}</p>`;
     }
-    resultsEl.prepend(card);
   }
-  toast('審查完成');
+}
+
+// ───────────────────────── 掃描檔：AI 辨識文字 → 走同一套本機審查 ─────────────────────────
+const SCAN_MAX_PAGES = 30, SCAN_BATCH = 8;
+
+function renderScannedCard(card, file, reason) {
+  card.innerHTML = `<h2>${esc(file.name)}</h2>
+    <div class="scan-box">
+      <b>⚠️ 掃描影像檔，本機無法抽取文字</b>（${esc(reason)}）<br>
+      可改由 AI 從影像辨識出文字，再交給本工具的規則、金額比對與商務摘要審查。<br>
+      <b style="color:var(--err)">注意：影像無法去識別化</b>——公司名、金額、簽章等機密會以<b>原始影像</b>送到 Anthropic API。
+      請先確認此文件的機密等級與公司政策允許後再送出；能取得 Word／文字型 PDF 時請優先用原檔。
+      <div class="controls">
+        <label><input type="checkbox" class="scan-ok"> 我已確認此文件可送外部 AI（影像不會遮蔽）</label>
+        <label>最多頁數 <input type="number" class="scan-pages" value="15" min="1" max="${SCAN_MAX_PAGES}" style="width:64px"></label>
+        <button class="primary scan-btn" disabled>🤖 AI 辨識文字後審查</button>
+      </div>
+      <div class="scan-status hint"></div>
+    </div>`;
+  const ok = card.querySelector('.scan-ok'), btn = card.querySelector('.scan-btn');
+  ok.addEventListener('change', () => { btn.disabled = !ok.checked; });
+  btn.addEventListener('click', () => aiTranscribeAndReview(card, file, Math.min(SCAN_MAX_PAGES, Math.max(1, parseInt(card.querySelector('.scan-pages').value, 10) || 15))));
+}
+
+function canvasToJpeg(canvas) {
+  return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+}
+
+async function scanImages(file, maxPages) {
+  const suffix = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+  const out = [];
+  if (IMAGE_SUFFIXES.includes(suffix)) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('圖片讀取失敗')); i.src = url; });
+      const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      out.push({ page: 1, data: canvasToJpeg(c) });
+    } finally { URL.revokeObjectURL(url); }
+    return { images: out, total: 1 };
+  }
+  const pdf = await openPdf(file);
+  const n = Math.min(pdf.numPages, maxPages);
+  for (let p = 1; p <= n; p++) {
+    const page = await pdf.getPage(p);
+    const vp0 = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: Math.min(2.2, 1800 / Math.max(vp0.width, vp0.height)) });
+    const c = document.createElement('canvas');
+    c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    out.push({ page: p, data: canvasToJpeg(c) });
+  }
+  return { images: out, total: pdf.numPages };
+}
+
+const TRANSCRIBE_PROMPT = [
+  '你是文件轉錄員。請把附上的合約掃描頁面逐頁、逐字精確轉錄為純文字（繁體中文照原文，不得改寫、翻譯、摘要或評論）。',
+  '規則：',
+  '1. 每頁開頭單獨一行寫「===第N頁===」，N 為我在圖片前標示的頁碼。',
+  '2. 依閱讀順序一行一行輸出；條款編號、金額、日期、百分比、國字大寫數字必須與原件完全一致。',
+  '3. 表格每列一行，儲存格以「｜」分隔；空白未填欄位以「＿＿」表示；勾選框以 ☐／☑ 表示。',
+  '4. 看不清楚的字以〔?〕代替，絕不臆測補寫。手寫簽名、印章只寫〔簽名〕〔印章〕。',
+  '5. 除轉錄內容外不要輸出任何其他文字。',
+].join('\n');
+
+async function callClaudeText(key, model, content, maxTokens, onDelta) {
+  const request = { model, max_tokens: maxTokens, stream: true,
+    system: TRANSCRIBE_PROMPT, messages: [{ role: 'user', content }] };
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01',
+               'anthropic-dangerous-direct-browser-access': 'true' },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { msg = (await res.json()).error?.message || msg; } catch {}
+    if (res.status === 401) msg = 'API key 無效或已撤銷（401）：' + msg;
+    if (res.status === 429) msg = '已達速率限制（429），請稍後再試：' + msg;
+    if (res.status === 413) msg = '單次送出的影像過大（413），請減少頁數：' + msg;
+    throw new Error(msg);
+  }
+  const reader = res.body.getReader(), decoder = new TextDecoder();
+  let buf = '', raw = '', usageIn = 0, usageOut = 0, stop = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n'); buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+      if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') { raw += ev.delta.text; onDelta && onDelta(raw); }
+      else if (ev.type === 'message_start') usageIn = ev.message?.usage?.input_tokens || 0;
+      else if (ev.type === 'message_delta') { usageOut = ev.usage?.output_tokens || usageOut; stop = ev.delta?.stop_reason || stop; }
+      else if (ev.type === 'error') throw new Error(ev.error?.message || 'API 串流錯誤');
+    }
+  }
+  return { raw, usageIn, usageOut, stop };
+}
+
+function transcriptToSegments(raw, pagesSent) {
+  const segments = [];
+  let page = pagesSent[0] || 1, ln = 0;
+  for (const line0 of raw.split(/\r?\n/)) {
+    const m = line0.match(/^\s*===\s*第\s*(\d+)\s*頁\s*===\s*$/);
+    if (m) { page = parseInt(m[1], 10); ln = 0; continue; }
+    const text = line0.trim();
+    if (text) segments.push({ text, location: `第 ${page} 頁第 ${++ln} 行（AI 辨識）`, page });
+  }
+  return segments;
+}
+
+async function aiTranscribeAndReview(card, file, maxPages) {
+  const key = (store.get('apiKey', '') || '').trim();
+  if (!key) { toast('請先在「AI 語意判讀設定」輸入 API key。', 5000); return; }
+  const model = store.get('aiModel', 'claude-opus-4-8');
+  const btn = card.querySelector('.scan-btn'), status = card.querySelector('.scan-status');
+  btn.disabled = true;
+  try {
+    status.textContent = '轉換頁面影像中…';
+    const { images, total } = await scanImages(file, maxPages);
+    let segments = [], usageIn = 0, usageOut = 0, truncated = false;
+    for (let i = 0; i < images.length; i += SCAN_BATCH) {
+      const batch = images.slice(i, i + SCAN_BATCH);
+      const content = [];
+      for (const im of batch) {
+        content.push({ type: 'text', text: `第${im.page}頁：` });
+        content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: im.data } });
+      }
+      content.push({ type: 'text', text: `請轉錄以上第 ${batch[0].page}–${batch[batch.length - 1].page} 頁。` });
+      const label = `AI 辨識第 ${batch[0].page}–${batch[batch.length - 1].page} 頁（共送 ${images.length} 頁）…`;
+      status.textContent = label;
+      const r = await callClaudeText(key, model, content, 16000, raw => { status.textContent = `${label} 已收 ${raw.length} 字`; });
+      usageIn += r.usageIn; usageOut += r.usageOut;
+      if (r.stop === 'max_tokens') truncated = true;
+      segments = segments.concat(transcriptToSegments(r.raw, batch.map(b => b.page)));
+    }
+    if (!segments.length) throw new Error('AI 未辨識出任何文字。');
+    const [pin, pout] = AI_PRICING[model] || [0, 0];
+    const cost = (usageIn * pin + usageOut * pout) / 1e6;
+    const notes = [`文字由 AI（${model}）自影像辨識，金額、日期、條次請對照原件確認；約 US$${cost.toFixed(3)}`];
+    if (total > images.length) notes.push(`僅辨識前 ${images.length} 頁（全檔 ${total} 頁）`);
+    if (truncated) notes.push('部分頁面輸出達上限可能被截斷，請減少每次頁數重試');
+    const r = await reviewFile(file, $('#doc-type').value, $('#main-only').checked, segments);
+    renderResultCard(card, file.name, r, notes.join('；'));
+    toast('掃描檔辨識與審查完成');
+  } catch (err) {
+    status.textContent = '失敗：' + (/Failed to fetch|NetworkError/.test(err.message) ? '連線失敗，請確認網路可達 api.anthropic.com（公司防火牆可能封鎖）。' : err.message);
+    btn.disabled = false;
+  }
 }
 
 resultsEl.addEventListener('click', e => {

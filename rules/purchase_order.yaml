@@ -64,3 +64,34 @@ rules:
     severity: info
     patterns: ["COVID-19", "COVID", "新冠", "疫情"]
     message: 全文未發現 COVID-19／疫情條款（注意事項：訂購單應有 COVID-19 條款），請確認是否遺漏。
+
+  # ── 2026-10 由 contract-reviewer（Python 原型）章節完整性檢查轉入，對準中鼎 PO(C) A～N 條款 ──
+  # 既有規則已涵蓋：B 付款(po-payment)、C 交貨(po-delivery/po-incoterm)、D 保固(po-warranty)、
+  # E 約定損失賠償(po-penalty)、G 準據法(common-dispute)、H 檢驗(po-acceptance)、K 保險(po-insurance)、N COVID-19(po-covid19)
+  - id: po-documents
+    name: 訂購文件（A 條）
+    type: required
+    severity: info
+    patterns: ["訂購文件", "契約文件", "合約文件", "附件[一二三四五六七八九十\\d]"]
+    message: 全文未發現訂購文件／附件清單（A 條），附件序號不得任意更動，無附件者應加註「（無）」，請確認。
+
+  - id: po-packing
+    name: 包裝運送（F 條）
+    type: required
+    severity: info
+    patterns: ["包裝", "嘜頭", "裝運", "[Pp]acking", "[Mm]arking"]
+    message: 全文未發現包裝／運送條款（F 條），請確認是否遺漏。
+
+  - id: po-expediting
+    name: 催貨檢驗（H 條）
+    type: required
+    severity: info
+    patterns: ["催貨", "[Ee]xpedit", "遠端視訊", "視訊檢驗"]
+    message: 全文未發現催貨（H 條）相關文字；注意事項：遠端視訊催貨／檢驗條款不得刪除，請確認。
+
+  - id: po-cancellation
+    name: 取消費（J 條）
+    type: required
+    severity: info
+    patterns: ["取消費", "取消訂單", "取消訂購", "[Cc]ancellation"]
+    message: 全文未發現取消費／取消訂購條款（J 條），請確認是否遺漏。

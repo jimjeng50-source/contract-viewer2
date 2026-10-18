@@ -76,3 +76,18 @@ rules:
     severity: warning
     patterns: ["切結書乙[紙份]"]
     message: 「乙紙／乙份」為舊式用法，建議改為「一紙／一份」以求全文數字用法一致。
+
+  # ── 2026-10 由 contract-reviewer（Python 原型）高風險措辭檢查轉入，改為繁中並限縮為免責／排除保固類 ──
+  - id: common-blanket-exemption
+    name: 概括免責用語
+    type: forbidden
+    severity: warning
+    patterns: ["概不負責", "不負任何責任", "不負一切責任", "免除一切責任", "不承擔任何責任"]
+    message: 出現概括免責用語，常見於廠商修改後的條文；故意或重大過失之責任依民法第222條不得預先免除，請確認是否為廠商擅自加入並刪除或限縮。
+
+  - id: common-no-warranty
+    name: 排除保固用語
+    type: forbidden
+    severity: warning
+    patterns: ["不提供保固", "無保固", "不負保固", "不予保固", "保固期間為零", "[Nn]o [Ww]arranty", "AS IS"]
+    message: 出現排除或不提供保固的用語，與我方保固條款（驗收後 12 個月或送達工地後 24 個月以先到者為準）衝突，請確認。
