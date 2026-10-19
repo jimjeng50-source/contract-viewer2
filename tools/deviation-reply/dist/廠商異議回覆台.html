@@ -1838,11 +1838,15 @@ $("#btnExport").onclick = async () => {
 function openSettings() {
   const st = S.settings;
   $("#sUser").value = st.user; $("#sKey").value = st.key; $("#sModel").value = st.model; $("#sGap").value = st.gap; $("#sBottom").checked = st.bottom; $("#sLang").value = st.lang;
-  $("#sPending").innerHTML = `新條款 ${S.localClauses.length} 條、既有條款的待核修改 ${S.pending.length} 條、回覆紀錄 ${S.logs.length} 筆、詞庫 ${S.dict.length} 個` + (S.localClauses.length ? `<table class="t" style="margin-top:6px"><tr><th>新條款</th><th>可接受</th><th>需升級</th><th>不可接受</th><th>慣用回覆</th></tr>${S.localClauses.map(c => `<tr><td>${esc(c.條款名稱)}</td><td>${esc(c.底線_可接受)}</td><td>${esc(c.底線_需升級)}</td><td>${esc(c.底線_不可接受)}</td><td>${esc(Core.clip(c.慣用回覆_中 || c.慣用回覆_EN, 60))}</td></tr>`).join("")}</table>` : "") + (S.pending.length ? `<table class="t" style="margin-top:6px"><tr><th>條款</th><th>欄位</th><th>內容</th><th></th></tr>${S.pending.map((p, i) => `<tr><td>${esc(p.clauseId)}</td><td>${esc(p.field)}</td><td>${esc(p.newVal)}</td><td><button class="b" data-del="${i}">刪除</button></td></tr>`).join("")}</table>` : "");
+  $("#sPending").innerHTML = `新條款 ${S.localClauses.length} 條、既有條款的待核修改 ${S.pending.length} 條、回覆紀錄 ${S.logs.length} 筆、詞庫 ${S.dict.length} 個` + (S.localClauses.length ? `<table class="t" style="margin-top:6px"><tr><th>新條款</th><th>可接受</th><th>需升級</th><th>不可接受</th><th>慣用回覆</th><th></th></tr>${S.localClauses.map((c, i) => `<tr><td>${esc(c.條款名稱)}</td><td>${esc(c.底線_可接受)}</td><td>${esc(c.底線_需升級)}</td><td>${esc(c.底線_不可接受)}</td><td>${esc(Core.clip(c.慣用回覆_中 || c.慣用回覆_EN, 60))}</td><td><button class="b" data-delc="${i}">刪除</button></td></tr>`).join("")}</table>` : "") + (S.pending.length ? `<table class="t" style="margin-top:6px"><tr><th>條款</th><th>欄位</th><th>內容</th><th></th></tr>${S.pending.map((p, i) => `<tr><td>${esc(p.clauseId)}</td><td>${esc(p.field)}</td><td>${esc(p.newVal)}</td><td><button class="b" data-del="${i}">刪除</button></td></tr>`).join("")}</table>` : "");
   $("#dlgSet").showModal();
 }
 $("#btnSettings").onclick = openSettings;
-$("#sPending").onclick = e => { const i = e.target.dataset.del; if (i !== undefined) { S.pending.splice(+i, 1); save(); openSettings(); } };
+$("#sPending").onclick = e => {
+  const i = e.target.dataset.del, j = e.target.dataset.delc;
+  if (i !== undefined) { S.pending.splice(+i, 1); save(); openSettings(); }
+  if (j !== undefined && confirm("刪除這條新條款（含已學到的底線）？")) { S.localClauses.splice(+j, 1); save(); openSettings(); }
+};
 $("#dlgSet").addEventListener("change", e => {
   const st = S.settings, id = e.target.id;
   if (id === "sUser") st.user = e.target.value.trim(); else if (id === "sKey") st.key = e.target.value.trim(); else if (id === "sModel") st.model = e.target.value.trim();
