@@ -69,8 +69,8 @@ details summary{cursor:pointer}
 <header>
   <h1>廠商異議回覆台</h1>
   <div id="ruleBadge">尚未開啟規則檔</div>
-  <button class="b" id="btnOpenRules">開啟規則檔</button>
-  <button class="b" id="btnSaveRules" disabled>存回規則檔</button>
+  <button class="b" id="btnOpenRules">開啟既有規則檔</button>
+  <button class="b" id="btnSaveRules" disabled>建立規則檔</button>
   <button class="b" id="btnReview">每月 Review</button>
   <button class="b" id="btnSettings">設定</button>
 </header>
@@ -79,7 +79,7 @@ details summary{cursor:pointer}
   <div id="drop">
     <div class="big">把廠商的異議檔拖到這裡</div>
     <div class="muted">Excel／Word／PDF（含掃描檔）／圖片皆可，或點此選檔</div>
-    <div class="steps"><span>① 拖入檔案</span><span>② AI 依底線草擬回覆</span><span>③ 你同意或給意見</span><span>④ 學成規則（待核）</span><span>⑤ 產出完稿</span></div>
+    <div class="steps"><span>① 拖入檔案</span><span>② AI 草擬回覆</span><span>③ 你同意或給意見</span><span>④ 意見歸納成規則</span><span>⑤ 產出完稿</span><span>⑥ 規則存成 Excel 共用</span></div>
   </div>
   <input type="file" id="fileIn" hidden accept=".xlsx,.xlsm,.xls,.docx,.pdf,.jpg,.jpeg,.png">
   <input type="file" id="ruleIn" hidden accept=".xlsx,.xlsm">
@@ -132,7 +132,7 @@ details summary{cursor:pointer}
     </div>
     <div class="row" style="margin-top:8px">
       <label class="f">每次呼叫間隔（秒）<input type="number" id="sGap" min="0" max="60" style="width:90px"></label>
-      <label style="font-size:13px"><input type="checkbox" id="sBottom"> 讓 AI 參考內部底線判斷立場（底線會隨遮蔽後內容送出）</label>
+      <label style="font-size:13px"><input type="checkbox" id="sBottom"> 讓 AI 參考已累積的底線判斷立場（底線會隨遮蔽後內容送出）</label>
     </div>
     <div id="sMsg" class="muted" style="margin-top:6px"></div>
     <h2 style="margin-top:16px">尚未存回規則檔的資料</h2>
@@ -176,10 +176,10 @@ const LS = { get(k, d) { try { const v = localStorage.getItem("dr." + k); return
 const S = {
   settings: Object.assign({ user: "", key: "", model: "gemini-2.5-flash", gap: 6, bottom: true, lang: "auto" }, LS.get("settings", {})),
   master: LS.get("master", null), masterName: LS.get("masterName", ""), masterAt: LS.get("masterAt", ""), handle: null,
-  pending: LS.get("pending", []), logs: LS.get("logs", []), dict: LS.get("dict", []),
+  pending: LS.get("pending", []), logs: LS.get("logs", []), dict: LS.get("dict", []), localClauses: LS.get("localClauses", []),
   sess: null,
 };
-function save() { LS.set("pending", S.pending); LS.set("logs", S.logs); LS.set("dict", S.dict); LS.set("settings", S.settings); renderBadge(); }
+function save() { LS.set("localClauses", S.localClauses); LS.set("pending", S.pending); LS.set("logs", S.logs); LS.set("dict", S.dict); LS.set("settings", S.settings); renderBadge(); }
 function toast(m, ms) { const t = $("#toast"); t.textContent = m; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", ms || 2800); }
 const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -192,11 +192,12 @@ const openPdf = buf => pdfjsLib.getDocument({ data: new Uint8Array(buf.slice(0))
 
 // ───────── 規則檔 ─────────
 function masterView() {
-  if (!S.master) return null;
-  const logs = S.master.logs.concat(S.logs.map(r => Object.fromEntries(Core.SCHEMA.回覆紀錄.map((k, i) => [k, r[i]]))));
-  return Object.assign({}, S.master, { logs });
+  const base = S.master || Engine.EMPTY_MASTER();
+  const logs = base.logs.concat(S.logs.map(r => Object.fromEntries(Core.SCHEMA.回覆紀錄.map((k, i) => [k, r[i]]))));
+  return Object.assign({}, base, { clauses: base.clauses.concat(S.localClauses), logs });
 }
 function allDict() { return Deid.dictMerge(S.master ? S.master.dict : [], S.dict).dict; }
+const unsaved = () => S.localClauses.length + S.pending.length + S.logs.length + S.dict.length;
 function setMaster(m, name) {
   S.master = { clauses: m.clauses, proposals: m.proposals, logs: m.logs, dict: m.dict, changes: m.changes };
   S.masterName = name; S.masterAt = new Date().toLocaleString("zh-TW");
@@ -204,20 +205,23 @@ function setMaster(m, name) {
   renderBadge(); renderIntro();
 }
 function renderBadge() {
-  const n = S.pending.length + S.logs.length + S.dict.length;
-  if (!S.master) $("#ruleBadge").innerHTML = "尚未開啟規則檔（商務條款底線 MasterFile.xlsx）";
-  else {
-    const pend = S.master.proposals.filter(p => !p.決議).length + S.pending.length;
-    $("#ruleBadge").innerHTML = `規則檔 <b>${esc(S.masterName)}</b>｜${S.master.clauses.length} 條款｜待核規則 <b>${pend}</b>｜累積回覆 ${S.master.logs.length + S.logs.length} 筆｜讀取於 ${esc(S.masterAt)}`;
-  }
+  const n = unsaved(), mv = masterView();
+  const pend = mv.proposals.filter(p => !p.決議).length + S.pending.length + mv.clauses.filter(c => c.狀態 === "待核").length;
+  if (!S.master) $("#ruleBadge").innerHTML = mv.clauses.length || S.logs.length
+    ? `尚無規則檔｜已從使用中學到 <b>${mv.clauses.length}</b> 條規則、累積回覆 ${S.logs.length} 筆（按「建立規則檔」存成 Excel）`
+    : "尚無規則檔：直接拖入廠商檔開始，規則會從你的回饋中累積";
+  else $("#ruleBadge").innerHTML = `規則檔 <b>${esc(S.masterName)}</b>｜${mv.clauses.length} 條款｜待核 <b>${pend}</b>｜累積回覆 ${mv.logs.length} 筆｜讀取於 ${esc(S.masterAt)}`;
+  const label = S.master ? "存回規則檔" : "建立規則檔";
   $("#btnSaveRules").disabled = !n;
-  $("#btnSaveRules").textContent = n ? `存回規則檔（${n} 筆）` : "存回規則檔";
+  $("#btnSaveRules").textContent = n ? `${label}（${n} 筆）` : label;
+  $("#btnOpenRules").textContent = S.master ? "換規則檔" : "開啟既有規則檔";
 }
 function renderIntro() {
   const el = $("#intro");
-  if (!S.master) { el.style.display = ""; el.innerHTML = `<b>第一次使用：</b>先按右上「開啟規則檔」，選 SharePoint 同步資料夾裡的「商務條款底線 MasterFile.xlsx」。之後 AI 會依裡面的底線與範例回覆，你給的意見也會學回這份檔案。${S.settings.key ? "" : "<br>另外請到「設定」貼上你的 Gemini API Key。"}`; return; }
-  if (!S.settings.key) { el.style.display = ""; el.innerHTML = `請到「設定」貼上你的 Gemini API Key 後即可開始。`; return; }
-  el.style.display = "none";
+  const tips = [];
+  if (!S.settings.key) tips.push("請先到「設定」貼上你的 Gemini API Key。");
+  if (!S.master && !masterView().clauses.length) tips.push("<b>不需要事先準備規則檔。</b>直接拖入廠商異議檔，AI 先以買方一般立場草擬；你按「同意」或給意見，意見會被歸納成規則，越用越準。累積後按右上「建立規則檔」存成 Excel 放 SharePoint 與同仁共用；同仁已有規則檔就按「開啟既有規則檔」。");
+  el.style.display = tips.length ? "" : "none"; el.innerHTML = tips.join("<br>");
 }
 async function readMasterBuf(buf, name) {
   const m = Core.parseMaster(XLSX, buf);
@@ -254,14 +258,17 @@ async function saveRules() {
   const user = S.settings.user || "未具名";
   const proposals = S.pending.map(p => [p.id, p.at, p.by || user, p.type, p.clauseId, p.field, p.oldVal || "", p.newVal, p.reason || "", "", "", ""]);
   const dict = S.dict.map(d => [d.type, d.value, d.by || user, d.at || Core.today()]);
-  const payload = { proposals, logs: S.logs, dict };
+  const clauses = S.localClauses;
+  const newProps = clauses.map((c, i) => [`P${stamp()}-${user.slice(0, 3)}-N${i + 1}`, Core.today(), user, "新增條款", c.條款ID, "（整列）", c.條款名稱, `${c.條款名稱}｜可接受：${c.底線_可接受 || "—"}｜需升級：${c.底線_需升級 || "—"}｜不可接受：${c.底線_不可接受 || "—"}`, c.備註, "", "", ""]);
+  const payload = { clauses, proposals: proposals.concat(newProps), logs: S.logs, dict };
+  if (!S.master) return createRules(payload);
   try {
     let h = S.handle || await idbGet("handle"), buf, name;
     if (h && (await h.queryPermission({ mode: "readwrite" }) === "granted" || await h.requestPermission({ mode: "readwrite" }) === "granted")) {
       const f = await h.getFile(); name = f.name;
       const r = await Engine.mergeIntoMaster(ExcelJS, await f.arrayBuffer(), payload); buf = r.buf;
       const w = await h.createWritable(); await w.write(buf); await w.close();
-      toast(`已存回 ${name}：提案 ${r.res.proposals}、回覆紀錄 ${r.res.logs}、詞庫 ${r.res.dict}`, 4000);
+      toast(`已存回 ${name}：新條款 ${r.res.clauses}、提案 ${r.res.proposals}、回覆紀錄 ${r.res.logs}、詞庫 ${r.res.dict}`, 4000);
     } else {
       const f = await pickFile(".xlsx,.xlsm", "請選擇 SharePoint 上「最新版」的規則檔（會把你的資料合併進去後下載，再覆蓋回原位置）");
       if (!f) return; name = f.name;
@@ -269,9 +276,25 @@ async function saveRules() {
       download(buf, name, XLSX_T);
       toast(`已下載合併後的 ${name}，請覆蓋回 SharePoint 原檔`, 6000);
     }
-    S.pending = []; S.logs = []; S.dict = []; save();
+    S.pending = []; S.logs = []; S.dict = []; S.localClauses = []; save();
     setMaster(await readMasterBuf(buf, name), name);
   } catch (e) { console.error(e); toast("存回失敗：" + e.message, 6000); }
+}
+async function createRules(payload) {
+  try {
+    const buf = await Engine.buildNewMaster(ExcelJS, { clauses: payload.clauses, logs: payload.logs, dict: payload.dict });
+    let name = "商務條款底線規則檔.xlsx";
+    if (window.showSaveFilePicker) {
+      try {
+        const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: "Excel", accept: { [XLSX_T]: [".xlsx"] } }] });
+        const w = await h.createWritable(); await w.write(buf); await w.close();
+        S.handle = h; idbPut("handle", h); name = h.name;
+        toast(`已建立 ${name}；之後「存回規則檔」會直接寫回這個檔案`, 5000);
+      } catch (e) { if (e.name === "AbortError") return; throw e; }
+    } else { download(buf, name, XLSX_T); toast("已下載規則檔，請放到 SharePoint 同步資料夾；下次用「開啟既有規則檔」讀取", 6000); }
+    S.pending = []; S.logs = []; S.dict = []; S.localClauses = []; save();
+    setMaster(await readMasterBuf(buf, name), name);
+  } catch (e) { console.error(e); toast("建立失敗：" + e.message, 6000); }
 }
 function pickFile(accept, msg) { return new Promise(ok => { if (msg) toast(msg, 5000); const i = document.createElement("input"); i.type = "file"; i.accept = accept; i.onchange = () => ok(i.files[0] || null); i.click(); }); }
 $("#btnSaveRules").onclick = saveRules;
@@ -294,9 +317,8 @@ async function ingest(file) {
   if (["xlsx", "xlsm"].includes(ext)) {
     try { const wb = XLSX.read(new Uint8Array(buf), { type: "array", bookSheets: true }); if (wb.SheetNames.includes("條款庫")) { setMaster(await readMasterBuf(buf, name), name); toast("已讀取規則檔（拖入的檔案只能讀取；要直接存回請用「開啟規則檔」）", 5000); return; } } catch (e) { }
   }
-  if (!S.master) { toast("請先開啟規則檔", 4000); return openRules(); }
   if (!S.settings.key) { toast("請先到「設定」貼上 Gemini API Key", 4000); return openSettings(); }
-  await refreshFromHandle(true);
+  if (S.master) await refreshFromHandle(true);
   newSession(file, buf);
   const s = S.sess;
   renderSession("讀取中…"); $("#items").innerHTML = "";
@@ -439,8 +461,8 @@ async function draftAll() {
       s.splitByAI = true; s.confirmedOnce = true;
       if (S.settings.gap) await sleep(S.settings.gap * 1000);
     }
-    s.items.forEach(it => { it.cands = Core.matchClauses(it.text + " " + it.ref, S.master.clauses.filter(c => c.狀態 !== "停用"), 2); it.hint = it.cands.map(c => c.id).join("/"); });
     const mv = masterView(), chunks = [];
+    s.items.forEach(it => { it.cands = Core.matchClauses(it.text + " " + it.ref, mv.clauses.filter(c => c.狀態 !== "停用"), 2); it.hint = it.cands.map(c => c.id).join("/"); });
     for (let i = 0; i < s.items.length; i += 10) chunks.push(s.items.slice(i, i + 10));
     const build = ch => Engine.draftUserText(ch, ch.flatMap(it => it.cands.map(c => c.id)), mv, S.pending, S.settings.bottom);
     const all = chunks.map(build).join("\n\n=====\n\n");
@@ -464,8 +486,9 @@ async function draftAll() {
   } catch (e) { console.error(e); renderSession(); toast("失敗：" + e.message, 6000); }
 }
 function applyAI(it, x) {
-  const ids = S.master.clauses.map(c => c.條款ID);
+  const ids = masterView().clauses.map(c => c.條款ID);
   it.clauseId = ids.includes(Engine.str(x.clauseId)) ? Engine.str(x.clauseId) : (it.clauseId || "");
+  if (!it.clauseId && x.clauseName) it.clauseName = unmask(x.clauseName);
   it.stance = Engine.STANCES.includes(x.stance) ? x.stance : (x.stance || "");
   it.bottom = Engine.str(x.bottom);
   it.zh = unmask(x.zh); it.en = unmask(x.en); it.reason = unmask(x.reason);
@@ -485,12 +508,12 @@ function chipBottom(it) {
 }
 function renderItems() {
   const s = S.sess; if (!s) return;
-  const clauses = S.master ? S.master.clauses.filter(c => c.狀態 !== "停用") : [];
+  const clauses = masterView().clauses.filter(c => c.狀態 !== "停用");
   $("#items").innerHTML = s.items.map((it, i) => {
     const has = it.zh || it.en;
     return `<div class="item ${it.agreed ? "done" : ""}" data-i="${i}">
       <div class="item-h"><b>項次 ${esc(it.no)}</b>${it.ref ? `<span class="muted">條次 ${esc(it.ref)}</span>` : ""}
-        <select data-f="clauseId" style="max-width:240px"><option value="">（未對應條款）</option>${clauses.map(c => `<option value="${esc(c.條款ID)}" ${c.條款ID === it.clauseId ? "selected" : ""}>${esc(c.條款ID)} ${esc(c.條款名稱)}</option>`).join("")}</select>
+        <select data-f="clauseId" style="max-width:240px"><option value="">${it.clauseName ? "新：" + esc(it.clauseName) : "（未對應條款）"}</option>${clauses.map(c => `<option value="${esc(c.條款ID)}" ${c.條款ID === it.clauseId ? "selected" : ""}>${esc(c.條款ID)} ${esc(c.條款名稱)}</option>`).join("")}</select>
         ${chipStance(it)}${chipBottom(it)}
         ${it.leak && it.leak.length ? `<span class="chip bad" title="回覆出現了內部底線的數字，但廠商原文沒有">⚠ 可能洩漏底線：${esc(it.leak.join("、"))}</span>` : ""}
         ${it.left && it.left.length ? `<span class="chip bad">⚠ 未還原代號 ${esc(it.left.join(" "))}</span>` : ""}
@@ -506,7 +529,7 @@ function renderItems() {
             <input type="text" data-f="fb" placeholder="給 AI 的意見，例如：可同意 60 天，但需提供保證／語氣軟一點／這類一律拒絕" style="flex:1;min-width:220px" value="${esc(it.fb || "")}">
             <button class="b p" data-a="revise">AI 調整</button>
           </div>
-          ${it.rule ? `<div class="rule">🧠 <b>可學成規則：</b>${esc(it.rule.summary || "")}<br><span class="muted">${esc(it.rule.clauseId)} ${esc((S.master.clauses.find(c => c.條款ID === it.rule.clauseId) || {}).條款名稱 || "")}｜${esc(it.rule.field)}</span><br>${esc(it.rule.value)}
+          ${it.rule ? `<div class="rule">🧠 <b>可學成規則：</b>${esc(it.rule.summary || "")}<br><span class="muted">${it.rule.clauseId ? esc(it.rule.clauseId) + " " + esc((masterView().clauses.find(c => c.條款ID === it.rule.clauseId) || {}).條款名稱 || "") : "新條款：" + esc(it.rule.clauseName || "")}｜${esc(it.rule.field)}</span><br>${esc(it.rule.value)}
             <div class="row" style="margin-top:6px"><button class="b p" data-a="learn">記住這條規則（待主管核定）</button><button class="b" data-a="skip">不用</button></div></div>` : ""}
           ${it.learned ? `<div class="note ok">已記成待核規則：${esc(it.learned)}</div>` : ""}`
         : `<div class="muted" style="padding-top:22px">尚未草擬</div>`}</div>
@@ -541,14 +564,37 @@ async function revise(it) {
     applyAI(it, Object.assign({ clauseId: it.clauseId }, j));
     it.agreed = false; it.history = (it.history || []).concat([{ fb: it.fb }]);
     const r = j.rule && j.rule.field && j.rule.value ? j.rule : null;
-    it.rule = r && Engine.BOTTOM.concat(["慣用回覆_中", "慣用回覆_EN"]).includes(r.field) ? { clauseId: Engine.str(r.clauseId) || it.clauseId, field: r.field, value: unmask(r.value), summary: unmask(r.summary) } : null;
-    if (it.rule && !S.master.clauses.some(c => c.條款ID === it.rule.clauseId)) it.rule.clauseId = it.clauseId;
-    if (it.rule && !it.rule.clauseId) it.rule = null;
+    it.rule = r && Engine.BOTTOM.concat(["慣用回覆_中", "慣用回覆_EN"]).includes(r.field) ? { clauseId: Engine.str(r.clauseId) || it.clauseId, clauseName: unmask(r.clauseName) || it.clauseName || "", category: unmask(r.category), keywords: unmask(r.keywords), field: r.field, value: unmask(r.value), summary: unmask(r.summary) } : null;
+    if (it.rule && !masterView().clauses.some(c => c.條款ID === it.rule.clauseId)) it.rule.clauseId = it.clauseId || "";
+    if (it.rule && !it.rule.clauseId) {
+      const same = masterView().clauses.find(c => c.條款名稱 && c.條款名稱 === it.rule.clauseName);
+      if (same) it.rule.clauseId = same.條款ID;
+      else if (!it.rule.clauseName) it.rule = null;
+    }
     it.fb = ""; renderItems();
   } catch (e) { console.error(e); toast("調整失敗：" + e.message, 6000); renderItems(); }
 }
 function learnRule(it) {
-  const r = it.rule, c = S.master.clauses.find(x => x.條款ID === r.clauseId);
+  const r = it.rule, mv = masterView();
+  const local = S.localClauses.find(x => x.條款ID === r.clauseId);
+  const append = (cl, f, v) => { cl[f] = f.startsWith("慣用回覆") && cl[f] ? `${cl[f]}\n\n【範例】${v}` : v; };
+  if (local || !r.clauseId) {
+    // 尚未存入規則檔的條款：直接更新／新建本機條款（狀態待核）
+    let cl = local;
+    if (!cl) {
+      const d = new Date(), id = `N-${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${(S.settings.user || "X").slice(0, 3)}-${S.localClauses.length + 1}`;
+      cl = Object.fromEntries(Core.SCHEMA.條款庫.map(k => [k, ""]));
+      Object.assign(cl, { 條款ID: id, 類別: r.category || "其他", 條款名稱: r.clauseName, 關鍵字: r.keywords || r.clauseName, 狀態: "待核", 版本: "0.1", 核准人: "", 下次Review日: "", 備註: `由 ${S.settings.user || "使用者"} 於 ${Core.today()} 的回饋歸納` });
+      S.localClauses.push(cl);
+    }
+    append(cl, r.field, r.value);
+    if (r.keywords && cl.關鍵字 !== r.keywords) cl.關鍵字 = [...new Set((cl.關鍵字 + ";" + r.keywords).split(/[;；,，]/).map(x => x.trim()).filter(Boolean))].join(";");
+    S.sess.items.forEach(x => { if (!x.clauseId && x.clauseName === cl.條款名稱) x.clauseId = cl.條款ID; });
+    it.clauseId = cl.條款ID;
+    it.learned = `${cl.條款ID} ${cl.條款名稱}｜${r.field}：${r.value}`; it.rule = null; save();
+    return toast("已記住（待主管核定）；下一份起 AI 就會套用", 4000);
+  }
+  const c = mv.clauses.find(x => x.條款ID === r.clauseId);
   S.pending.push({ id: `P${stamp()}-${(S.settings.user || "X").slice(0, 3)}-${S.pending.length + 1}`, at: Core.today(), by: S.settings.user, type: r.field.startsWith("慣用回覆") ? "新增範例" : "修改內容",
     clauseId: r.clauseId, field: r.field, oldVal: c ? c[r.field] || "" : "", newVal: r.value, reason: `AI 自使用者意見萃取：${(it.history || []).map(h => h.fb).join("／")}；廠商異議：${Core.clip(it.text, 80)}` });
   it.learned = `${r.clauseId}｜${r.field}：${r.value}`; it.rule = null; save();
@@ -574,7 +620,7 @@ $("#btnExport").onclick = async () => {
     else download(await Engine.writeClarification(ExcelJS, done, { project: s.project, vendor: s.vendor }, lang), `${base}_澄清回覆.xlsx`, XLSX_T);
   } catch (e) { console.error(e); return toast("產出失敗：" + e.message, 6000); }
   const st = stamp();
-  done.forEach((it, k) => S.logs.push([`R${st}-${(S.settings.user || "X").slice(0, 3)}-${k + 1}`, Core.today(), S.settings.user, s.project, s.vendor, it.clauseId || "", Core.clip(it.text, 150), it.stance || "", it.zh || "", it.en || "", it.bottom === "需升級" || it.bottom === "不可接受" ? "是" : "否", "", (it.history || []).length ? "經意見調整" : ""]));
+  done.forEach((it, k) => S.logs.push([`R${st}-${(S.settings.user || "X").slice(0, 3)}-${k + 1}`, Core.today(), S.settings.user, s.project, s.vendor, it.clauseId || it.clauseName || "", Core.clip(it.text, 150), it.stance || "", it.zh || "", it.en || "", it.bottom === "需升級" || it.bottom === "不可接受" ? "是" : "否", "", (it.history || []).length ? "經意見調整" : ""]));
   s.exported = true; save();
   toast(`完稿已下載；${done.length} 筆回覆已記入經驗。記得按「存回規則檔」`, 6000);
 };
@@ -583,7 +629,7 @@ $("#btnExport").onclick = async () => {
 function openSettings() {
   const st = S.settings;
   $("#sUser").value = st.user; $("#sKey").value = st.key; $("#sModel").value = st.model; $("#sGap").value = st.gap; $("#sBottom").checked = st.bottom; $("#sLang").value = st.lang;
-  $("#sPending").innerHTML = `待核規則 ${S.pending.length} 條、回覆紀錄 ${S.logs.length} 筆、詞庫 ${S.dict.length} 個` + (S.pending.length ? `<table class="t" style="margin-top:6px"><tr><th>條款</th><th>欄位</th><th>內容</th><th></th></tr>${S.pending.map((p, i) => `<tr><td>${esc(p.clauseId)}</td><td>${esc(p.field)}</td><td>${esc(p.newVal)}</td><td><button class="b" data-del="${i}">刪除</button></td></tr>`).join("")}</table>` : "");
+  $("#sPending").innerHTML = `新條款 ${S.localClauses.length} 條、既有條款的待核修改 ${S.pending.length} 條、回覆紀錄 ${S.logs.length} 筆、詞庫 ${S.dict.length} 個` + (S.localClauses.length ? `<table class="t" style="margin-top:6px"><tr><th>新條款</th><th>可接受</th><th>需升級</th><th>不可接受</th><th>慣用回覆</th></tr>${S.localClauses.map(c => `<tr><td>${esc(c.條款名稱)}</td><td>${esc(c.底線_可接受)}</td><td>${esc(c.底線_需升級)}</td><td>${esc(c.底線_不可接受)}</td><td>${esc(Core.clip(c.慣用回覆_中 || c.慣用回覆_EN, 60))}</td></tr>`).join("")}</table>` : "") + (S.pending.length ? `<table class="t" style="margin-top:6px"><tr><th>條款</th><th>欄位</th><th>內容</th><th></th></tr>${S.pending.map((p, i) => `<tr><td>${esc(p.clauseId)}</td><td>${esc(p.field)}</td><td>${esc(p.newVal)}</td><td><button class="b" data-del="${i}">刪除</button></td></tr>`).join("")}</table>` : "");
   $("#dlgSet").showModal();
 }
 $("#btnSettings").onclick = openSettings;
@@ -602,7 +648,7 @@ $("#sWipe").onclick = () => { if (confirm("清除本機設定、API Key 與尚�
 $("#btnReview").onclick = () => { const d = new Date(); if (!$("#rMonth").value) $("#rMonth").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; $("#dlgRev").showModal(); };
 async function buildReview() {
   await refreshFromHandle(true);
-  if (!S.master) throw new Error("請先開啟規則檔");
+  if (!S.master) throw new Error("還沒有規則檔：先用一陣子，再按「建立規則檔」");
   const f = $("#rPrev").files[0]; let prev = null;
   if (f) { prev = Core.parseMaster(XLSX, await f.arrayBuffer()); if (prev.errors.length) throw new Error(prev.errors.join("；")); }
   const R = Core.monthlyReview({ prev, curr: S.master, month: $("#rMonth").value, dept: $("#rDept").value });

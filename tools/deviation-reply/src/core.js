@@ -66,7 +66,7 @@
     out.changes = (sheetRows(XLSX, wb, "變更紀錄") || []).map(r => { const o = {}; for (const k of SCHEMA.變更紀錄) o[k] = str(r[k]); return o; });
     for (const r of out.clauses) {
       r.下次Review日 = normDate(r.下次Review日); r.核准日 = normDate(r.核准日);
-      if (!["有效", "範例待核", "停用"].includes(r.狀態)) out.warnings.push(`${r.條款ID} 狀態「${r.狀態 || "空白"}」不在清單內，視為範例待核`);
+      if (!["有效", "範例待核", "待核", "停用"].includes(r.狀態)) out.warnings.push(`${r.條款ID} 狀態「${r.狀態 || "空白"}」不在清單內，視為範例待核`);
     }
     return out;
   }

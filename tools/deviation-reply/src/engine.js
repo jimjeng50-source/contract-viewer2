@@ -281,7 +281,8 @@
     "4. 不得自行新增底線以外的數字、期限或承諾。",
     "5. 中文用台灣商務書信用語（繁體），英文用正式合約書信英文，中英意思一致；每版 1–4 句，可直接貼入澄清表，不要稱謂署名。",
     "6. 文中〔類別NN〕代號為已遮蔽的機密資訊，必須原樣保留。",
-    `輸出：僅輸出 JSON：{"items":[{"no":"項次","clauseId":"條款ID或空字串","stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"中文回覆","en":"English reply","reason":"給承辦看的一句判斷理由（中文，可提及底線）"}]}`,
+    "7. 若沒有任何相關條款規則（規則庫尚在累積中），依台灣工程統包商買方的一般立場：原則維持我方原條款、請廠商說明理由，不自行讓步；並在 clauseName 給一個簡短條款名稱（如：付款條件、逾期罰款、保固）。",
+    `輸出：僅輸出 JSON：{"items":[{"no":"項次","clauseId":"條款ID或空字串","clauseName":"條款名稱","stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"中文回覆","en":"English reply","reason":"給承辦看的一句判斷理由（中文，可提及底線）"}]}`,
   ].join("\n");
 
   const REVISE_SYSTEM = [
@@ -289,8 +290,9 @@
     "改寫規則同前：不可在回覆透露內部底線；中文台灣商務用語、英文正式；中英一致；〔類別NN〕代號原樣保留。",
     "規則萃取：若使用者的意見表達了可一般化的原則（例如『付款天期最多同意 60 天』『保固可同意交貨後 18 個月孰先』『這類要求一律拒絕』），請轉成一條規則；",
     "field 只能是：底線_可接受、底線_需升級、底線_不可接受、慣用回覆_中、慣用回覆_EN；若只是針對這一案的措辭修改（如『語氣軟一點』），rule 為 null。",
+    "若規則庫沒有對應條款，clauseId 留空，並給 clauseName（簡短條款名稱）、category（付款／保證／保固／罰則／責任／價格／交貨／保險／終止／變更／爭議／其他）與 keywords（中英文關鍵字 4–8 個，分號分隔，供日後自動比對）。",
     "value 要寫成可直接放進規則庫的完整一句話，不要包含〔代號〕或個案名稱。",
-    `輸出：僅輸出 JSON：{"stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"…","en":"…","reason":"一句說明","rule":{"clauseId":"條款ID","field":"…","value":"…","summary":"一句話描述這條規則"}或null}`,
+    `輸出：僅輸出 JSON：{"stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"…","en":"…","reason":"一句說明","rule":{"clauseId":"條款ID或空字串","clauseName":"…","category":"…","keywords":"…","field":"…","value":"…","summary":"一句話描述這條規則"}或null}`,
   ].join("\n");
 
   const SPLIT_SYSTEM = [
@@ -334,10 +336,37 @@
     return [...nums].filter(n => reply.includes(n) && !dev.includes(n));
   }
 
+  const EMPTY_MASTER = () => ({ clauses: [], proposals: [], logs: [], dict: [], changes: [] });
+
+  // 從零建立規則檔（欄位與「商務條款底線 MasterFile」一致）
+  async function buildNewMaster(ExcelJS, { clauses, logs, dict }) {
+    const wb = new ExcelJS.Workbook();
+    const HDR = { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8710A" } }, alignment: { horizontal: "center", vertical: "middle", wrapText: true } };
+    const guide = wb.addWorksheet("說明");
+    [["商務條款底線規則檔"], ["由「廠商異議回覆台」依使用者回饋累積產生；請放 SharePoint 共用資料夾。"], ["條款庫", "AI 依使用者意見歸納的條款與底線。新條款狀態為「待核」，主管每月 review 核定後改為「有效」。"],
+      ["提案區", "對既有條款的修改建議（待核）；主管在「決議／決議日」填寫核准、修正後核准、退回或延至下月。"], ["回覆紀錄", "每次產出完稿的實際回覆，作為 AI 的經驗範例與月度統計。"], ["詞庫", "去識別化用的機密詞（廠商名、人名、專案名）。本表本身即為機密清單。"],
+      ["欄名", "各表第一列欄名為工具讀取依據，請勿更名或刪除。"]].forEach((r, i) => { const row = guide.addRow(r); if (i === 0) row.font = { bold: true, size: 16, color: { argb: "FFE8710A" } }; else row.getCell(1).font = { bold: true }; });
+    guide.getColumn(1).width = 14; guide.getColumn(2).width = 100;
+    const widths = { 條款庫: [12, 10, 16, 30, 40, 40, 32, 32, 32, 14, 45, 45, 10, 7, 10, 12, 13, 24], 提案區: [22, 12, 10, 12, 14, 16, 36, 40, 34, 12, 30, 12], 回覆紀錄: [24, 12, 10, 12, 16, 12, 40, 14, 45, 45, 12, 12, 24], 詞庫: [10, 30, 10, 12], 變更紀錄: [10, 12, 16, 40, 40, 14, 10] };
+    const lists = { 條款庫: { M: ["有效", "待核", "範例待核", "停用"] }, 提案區: { D: ["新增條款", "修改內容", "新增範例", "停用條款"], J: ["核准", "修正後核准", "退回", "延至下月"] }, 回覆紀錄: { K: ["是", "否"] }, 詞庫: { A: Deid.TYPES } };
+    const data = { 條款庫: (clauses || []).map(c => Core.SCHEMA.條款庫.map(k => c[k] || "")), 提案區: [], 回覆紀錄: logs || [], 詞庫: dict || [], 變更紀錄: [] };
+    for (const name of ["條款庫", "提案區", "回覆紀錄", "詞庫", "變更紀錄"]) {
+      const ws = wb.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1, xSplit: 1 }] });
+      ws.addRow(Core.SCHEMA[name]).eachCell(c => Object.assign(c, { style: JSON.parse(JSON.stringify(HDR)) }));
+      ws.getRow(1).height = 30;
+      widths[name].forEach((w, i) => ws.getColumn(i + 1).width = w);
+      for (const r of data[name]) ws.addRow(r).eachCell(c => c.alignment = { wrapText: true, vertical: "top" });
+      for (const [col, items] of Object.entries(lists[name] || {})) ws.dataValidations.add(`${col}2:${col}2000`, { type: "list", allowBlank: true, formulae: ['"' + items.join(",") + '"'] });
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: Core.SCHEMA[name].length } };
+    }
+    wb.views = [{ activeTab: 1 }];
+    return wb.xlsx.writeBuffer();
+  }
+
   // ───────── 規則檔存回（ExcelJS，保留格式與下拉選單） ─────────
-  async function mergeIntoMaster(ExcelJS, buf, { proposals, logs, dict }) {
+  async function mergeIntoMaster(ExcelJS, buf, { clauses, proposals, logs, dict }) {
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf);
-    const res = { proposals: 0, logs: 0, dict: 0, skipped: 0 };
+    const res = { clauses: 0, proposals: 0, logs: 0, dict: 0, skipped: 0 };
     const append = (sheetName, rows, key, counter) => {
       const ws = wb.getWorksheet(sheetName); if (!ws) throw new Error(`規則檔缺少工作表「${sheetName}」`);
       const have = new Set(); ws.eachRow((row, n) => { if (n > 1) have.add(str(row.getCell(key).value)); });
@@ -350,6 +379,7 @@
         row.commit(); have.add(k); res[counter]++;
       }
     };
+    append("條款庫", (clauses || []).map(c => Core.SCHEMA.條款庫.map(k => c[k] || "")), 1, "clauses");
     append("提案區", proposals || [], 1, "proposals");
     append("回覆紀錄", logs || [], 1, "logs");
     append("詞庫", dict || [], 2, "dict");
@@ -357,7 +387,7 @@
   }
 
   const Engine = { str, detectColumns, rowsToItems, ingestExcel, writeExcelSame, ingestDocx, writeDocxSame, writeClarification, resolveLang, replyText, isMostlyCJK,
-    effectiveClause, clauseBlock, pastReplies, draftUserText, reviseUserText, parseJSON, geminiBody, bottomLeak, mergeIntoMaster,
+    effectiveClause, clauseBlock, EMPTY_MASTER, buildNewMaster, pastReplies, draftUserText, reviseUserText, parseJSON, geminiBody, bottomLeak, mergeIntoMaster,
     DRAFT_SYSTEM, REVISE_SYSTEM, SPLIT_SYSTEM, STANCES, BOTTOM };
   if (typeof module !== "undefined" && module.exports) module.exports = Engine; else root.Engine = Engine;
 })(typeof window !== "undefined" ? window : globalThis);

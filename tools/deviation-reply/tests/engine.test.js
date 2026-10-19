@@ -51,5 +51,12 @@ let fail = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); i
   const mm = Core.parseMaster(XLSX, Buffer.from(m2.buf));
   ok(m.res.proposals === 1 && m2.res.skipped === 1 && mm.proposals.length === 1 && mm.logs.length === 1 && mm.dict.length === 1 && mm.clauses.length === 20, 'master merge append + dedupe');
   const wbm = new ExcelJS.Workbook(); await wbm.xlsx.load(m2.buf); ok(wbm.getWorksheet('條款庫').dataValidations && wbm.getWorksheet('條款庫').getCell('A1').font.bold, 'master formatting kept');
+  // from scratch
+  const nb = await E.buildNewMaster(ExcelJS, { clauses: [Object.assign(Object.fromEntries(Core.SCHEMA.條款庫.map(k => [k, ''])), { 條款ID: 'N-1019-Jim-1', 條款名稱: '付款條件', 關鍵字: '付款;payment', 底線_可接受: '最多 60 日', 狀態: '待核' })], logs: [['R1', '2026-10-19', 'Jim', '', '', 'N-1019-Jim-1', 'x', '接受', 'a', 'b', '否', '', '']], dict: [] });
+  const nm = Core.parseMaster(XLSX, Buffer.from(nb));
+  ok(!nm.errors.length && !nm.warnings.length && nm.clauses.length === 1 && nm.clauses[0].狀態 === '待核' && nm.logs.length === 1, 'build new master from scratch');
+  const nb2 = await E.mergeIntoMaster(ExcelJS, nb, { clauses: [Object.assign(Object.fromEntries(Core.SCHEMA.條款庫.map(k => [k, ''])), { 條款ID: 'N-1019-Jim-2', 條款名稱: '保固', 狀態: '待核' })], proposals: [], logs: [], dict: [] });
+  ok(Core.parseMaster(XLSX, Buffer.from(nb2.buf)).clauses.length === 2, 'merge new clause into master');
+  ok(E.draftUserText([{ no: '1', text: 'x' }], [], E.EMPTY_MASTER(), [], true).includes('未比對到條款'), 'draft prompt works with empty rules');
   console.log(fail ? `\n${fail} FAILED` : '\nALL PASS'); process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

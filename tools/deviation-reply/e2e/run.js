@@ -49,7 +49,7 @@ const J = o => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(o) }]
   console.log(' revised:', await p.inputValue('.item >> nth=0 >> textarea[data-f=zh]'));
   console.log(' leak chip:', await p.$$eval('.chip.bad', x => x.map(e => e.textContent)));
   await p.click('[data-a=learn]'); console.log(' learned:', await p.textContent('.note.ok'));
-  console.log(' badge:', (await p.textContent('#ruleBadge')).match(/待核規則 \d+/)[0]);
+  console.log(' badge:', (await p.textContent('#ruleBadge')).match(/待核 \d+/)[0]);
   await p.click('#btnAgreeAll');
   const [d1] = await Promise.all([p.waitForEvent('download'), p.click('#btnExport')]);
   await d1.saveAs(D + '/o_vendor.xlsx'); console.log(' exported', d1.suggestedFilename());
