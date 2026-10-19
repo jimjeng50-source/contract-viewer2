@@ -3,6 +3,7 @@
   "use strict";
   const Core = root.Core || (typeof require !== "undefined" ? require("./core.js") : null);
   const Deid = root.Deid || (typeof require !== "undefined" ? require("./deid.js") : null);
+  const Ref = root.Ref || (typeof require !== "undefined" ? require("./reference.js") : null);
   const str = v => (v === null || v === undefined ? "" : typeof v === "object" && v.richText ? v.richText.map(r => r.text).join("") : typeof v === "object" && "result" in v ? String(v.result ?? "") : typeof v === "object" && v.text ? String(v.text) : v instanceof Date ? Core.normDate(v) : String(v)).trim();
 
   // ───────── 欄位辨識（Excel 與 Word 表格共用） ─────────
@@ -101,12 +102,19 @@
         hc.style = JSON.parse(JSON.stringify(sc.style || {}));
       }
     }
+    const hasSug = items.some(it => suggestText(it, lang));
+    const scol = hasSug ? Math.max(col, ws.columnCount) + 1 : 0;
+    if (scol) {
+      ws.getColumn(scol).width = 50;
+      if (headerRow) { const hc = ws.getCell(headerRow, scol); hc.value = SUG_HDR(lang); hc.style = JSON.parse(JSON.stringify(ws.getCell(headerRow, col).style || {})); }
+    }
     for (const it of items) {
       const r = it.rowIndex + 1;
       const c = ws.getCell(r, col), sc = ws.getCell(r, ing.cols.text + 1);
       if (ing.cols.reply < 0) c.style = JSON.parse(JSON.stringify(sc.style || {}));
       c.value = replyText(it, lang);
       c.alignment = Object.assign({}, c.alignment || {}, { wrapText: true, vertical: "top" });
+      if (scol && suggestText(it, lang)) { const g = ws.getCell(r, scol); g.style = JSON.parse(JSON.stringify(sc.style || {})); g.value = suggestText(it, lang); g.alignment = { wrapText: true, vertical: "top" }; }
     }
     return wb.xlsx.writeBuffer();
   }
@@ -190,7 +198,7 @@
       for (const it of items) {
         const tcs = directChildren(trs[it.rowIndex], "tc");
         const tc = col < tcs.length ? tcs[col] : tcs[tcs.length - 1];
-        setCellText(doc, tc, replyText(it, lang));
+        setCellText(doc, tc, replyText(it, lang) + (suggestText(it, lang) ? `\n\n【${SUG_HDR(lang)}】\n${suggestText(it, lang)}` : ""));
       }
     } else {
       // 無表格：在文末（sectPr 前）加「我方回覆」標題與回覆表
@@ -204,7 +212,7 @@
       const grid = el(doc, "tblGrid"); for (const w of ["800", "4200", "4600"]) grid.appendChild(el(doc, "gridCol", { w })); tbl.appendChild(grid);
       const row = (cells, bold) => { const tr = el(doc, "tr"); cells.forEach(c => { const tc = el(doc, "tc"); tc.appendChild(makePara(doc, c, bold)); tr.appendChild(tc); }); tbl.appendChild(tr); };
       row(["項次 No.", "廠商異議 Vendor Deviation", "我方回覆 Our Response"], true);
-      for (const it of items) row([it.no, it.text, replyText(it, lang)]);
+      for (const it of items) row([it.no, it.text, replyText(it, lang) + (suggestText(it, lang) ? `\n\n【${SUG_HDR(lang)}】\n${suggestText(it, lang)}` : "")]);
       add(tbl);
     }
     zip.file("word/document.xml", new XMLSerializer().serializeToString(doc));
@@ -215,20 +223,31 @@
   async function writeClarification(ExcelJS, items, ctx, lang) {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Clarification");
-    ws.columns = [{ width: 8 }, { width: 14 }, { width: 55 }, { width: 60 }];
+    const hasSug = items.some(it => suggestText(it, lang));
+    ws.columns = [{ width: 8 }, { width: 14 }, { width: 55 }, { width: 60 }].concat(hasSug ? [{ width: 55 }] : []);
     const t = ws.addRow([`${ctx.project || ""} ${ctx.vendor || ""} 商務澄清回覆 Commercial Clarification`.trim()]);
     t.font = { bold: true, size: 14 }; ws.mergeCells(1, 1, 1, 4);
     ws.addRow([`日期 Date：${Core.today()}`]);
     ws.addRow([]);
-    const h = ws.addRow(["項次\nNo.", "條次\nRef.", "廠商異議\nVendor Deviation", lang === "zh" ? "我方回覆" : lang === "en" ? "Our Response" : "我方回覆\nOur Response"]);
+    const h = ws.addRow(["項次\nNo.", "條次\nRef.", "廠商異議\nVendor Deviation", lang === "zh" ? "我方回覆" : lang === "en" ? "Our Response" : "我方回覆\nOur Response"].concat(hasSug ? [SUG_HDR(lang)] : []));
     h.eachCell(c => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8710A" } }; c.alignment = { wrapText: true, vertical: "middle", horizontal: "center" }; });
     for (const it of items) {
-      const r = ws.addRow([it.no, it.ref, it.text, replyText(it, lang)]);
+      const r = ws.addRow([it.no, it.ref, it.text, replyText(it, lang)].concat(hasSug ? [suggestText(it, lang)] : []));
       r.eachCell(c => { c.alignment = { wrapText: true, vertical: "top" }; c.border = { top: { style: "thin", color: { argb: "FFD9D9D9" } }, bottom: { style: "thin", color: { argb: "FFD9D9D9" } } }; });
     }
     ws.views = [{ state: "frozen", ySplit: 4 }];
     return wb.xlsx.writeBuffer();
   }
+
+  // 建議修正條文（只在有條件接受時由 AI 提供）
+  function suggestText(it, lang) {
+    if (!it.sugZh && !it.sugEn) return "";
+    if (lang === "auto") lang = isMostlyCJK(it.text) ? "zh" : "en";
+    if (lang === "zh") return it.sugZh || it.sugEn;
+    if (lang === "en") return it.sugEn || it.sugZh;
+    return [it.sugZh, it.sugEn].filter(Boolean).join("\n\n");
+  }
+  const SUG_HDR = lang => lang === "zh" ? "建議修正條文" : lang === "en" ? "Proposed Clause Wording" : "建議修正條文 Proposed Clause";
 
   // ───────── 回覆語言 ─────────
   function isMostlyCJK(s) { const t = str(s).replace(/\s/g, ""); if (!t) return true; const c = (t.match(/[一-鿿]/g) || []).length; return c / t.length > 0.25; }
@@ -282,17 +301,23 @@
     "5. 中文用台灣商務書信用語（繁體），英文用正式合約書信英文，中英意思一致；每版 1–4 句，可直接貼入澄清表，不要稱謂署名。",
     "6. 文中〔類別NN〕代號為已遮蔽的機密資訊，必須原樣保留。",
     "7. 若沒有任何相關條款規則（規則庫尚在累積中），依台灣工程統包商買方的一般立場：原則維持我方原條款、請廠商說明理由，不自行讓步；並在 clauseName 給一個簡短條款名稱（如：付款條件、逾期罰款、保固）。",
-    `輸出：僅輸出 JSON：{"items":[{"no":"項次","clauseId":"條款ID或空字串","clauseName":"條款名稱","stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"中文回覆","en":"English reply","reason":"給承辦看的一句判斷理由（中文，可提及底線）"}]}`,
+    "8. 判斷依據的優先順序：使用者新規則 > 內部底線 > 中鼎 PO 慣例 > 工程會範本（國內公共工程慣例）＞ FIDIC（國際慣例，較平衡）。「制式條款參考」用來判斷廠商要求是否超出國內外慣例、決定讓步是否合理，並作為擬稿寫法的範本。",
+    "9. 「制式條款參考」只供內部判斷，回覆中絕不可提及 FIDIC、紅皮書、銀皮書、工程會、範本、條號或「國際慣例」等出處。",
+    "10. 只有立場為『有條件接受』時，另外給 sugZh／sugEn：可直接放入合約的修正條文（中英各一段，比照制式條款的結構與用語：主體、期限或比例、條件、例外；不得超出底線），其他立場留空字串。",
+    "11. topicId 填最相關的制式條款主題ID（如 T02），沒有就空字串。",
+    `輸出：僅輸出 JSON：{"items":[{"no":"項次","clauseId":"條款ID或空字串","clauseName":"條款名稱","topicId":"T01–T16 或空字串","stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"中文回覆","en":"English reply","sugZh":"建議修正條文（僅有條件接受）","sugEn":"Proposed clause (conditional acceptance only)","reason":"給承辦看的一句判斷理由（中文，可提及底線與所參考的制式條款）"}]}`,
   ].join("\n");
 
   const REVISE_SYSTEM = [
     "你是台灣 EPC 工程統包商（買方）的資深採購合約專員。使用者對你先前草擬的異議回覆提出意見，請依意見改寫，並判斷這個意見能否一般化成以後可沿用的規則。",
-    "改寫規則同前：不可在回覆透露內部底線；中文台灣商務用語、英文正式；中英一致；〔類別NN〕代號原樣保留。",
+    "改寫規則同前：不可在回覆透露內部底線；回覆中不得提及 FIDIC、工程會、範本、條號等出處（制式條款只供內部判斷）；中文台灣商務用語、英文正式；中英一致；〔類別NN〕代號原樣保留。",
+    "立場為『有條件接受』時，給 sugZh／sugEn：比照制式條款寫法、可直接放入合約的修正條文；其他立場留空字串。",
+    "規則的 topicId 填最相關的制式條款主題ID（如 T02），讓規則依主題歸類；clauseName 優先使用該主題名稱。",
     "規則萃取：若使用者的意見表達了可一般化的原則（例如『付款天期最多同意 60 天』『保固可同意交貨後 18 個月孰先』『這類要求一律拒絕』），請轉成一條規則；",
     "field 只能是：底線_可接受、底線_需升級、底線_不可接受、慣用回覆_中、慣用回覆_EN；若只是針對這一案的措辭修改（如『語氣軟一點』），rule 為 null。",
     "若規則庫沒有對應條款，clauseId 留空，並給 clauseName（簡短條款名稱）、category（付款／保證／保固／罰則／責任／價格／交貨／保險／終止／變更／爭議／其他）與 keywords（中英文關鍵字 4–8 個，分號分隔，供日後自動比對）。",
     "value 要寫成可直接放進規則庫的完整一句話，不要包含〔代號〕或個案名稱。",
-    `輸出：僅輸出 JSON：{"stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"…","en":"…","reason":"一句說明","rule":{"clauseId":"條款ID或空字串","clauseName":"…","category":"…","keywords":"…","field":"…","value":"…","summary":"一句話描述這條規則"}或null}`,
+    `輸出：僅輸出 JSON：{"stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"…","en":"…","sugZh":"…或空字串","sugEn":"…或空字串","topicId":"…","reason":"一句說明","rule":{"clauseId":"條款ID或空字串","topicId":"T01–T16 或空字串","clauseName":"…","category":"…","keywords":"…","field":"…","value":"…","summary":"一句話描述這條規則"}或null}`,
   ].join("\n");
 
   const SPLIT_SYSTEM = [
@@ -302,17 +327,21 @@
     '輸出：僅輸出 JSON：{"items":[{"no":"項次","ref":"廠商引用的條次（沒有就空字串）","text":"異議原文"}]}',
   ].join("\n");
 
-  function draftUserText(items, clauseIds, master, pending, sendBottom) {
+  const REF_HEAD = "【制式條款參考（只供內部判斷與擬稿，回覆中不得提及出處）】";
+  function refsText(refs, docKind) { return refs && refs.length ? [REF_HEAD, refs.map(s => Ref.block(s, docKind)).join("\n")].join("\n") : ""; }
+  function draftUserText(items, clauseIds, master, pending, sendBottom, refs, docKind) {
     const blocks = [...new Set(clauseIds.filter(Boolean))].map(id => effectiveClause(master, pending, id)).filter(Boolean).map(c => clauseBlock(c, master, sendBottom));
     const L = ["【相關條款規則】", blocks.length ? blocks.join("\n\n") : "（未比對到條款，請依一般採購買方立場判斷並將 clauseId 留空）", "", "【條款清單（供 clauseId 參考）】",
       master.clauses.filter(c => c.狀態 !== "停用").map(c => `${c.條款ID} ${c.條款名稱}`).join("；"), "", "【廠商異議】"];
-    for (const it of items) L.push(`(${it.no})${it.ref ? "［條次 " + it.ref + "］" : ""}${it.hint ? "［本機比對：" + it.hint + "］" : ""} ${it.text}`);
+    for (const it of items) L.push(`(${it.no})${it.ref ? "［條次 " + it.ref + "］" : ""}${it.hint ? "［本機比對：" + it.hint + "］" : ""}${it.topics && it.topics.length ? "［制式主題：" + it.topics.join("/") + "］" : ""} ${it.text}`);
+    const rt = refsText(refs, docKind);
+    if (rt) L.unshift(rt, "");
     return L.join("\n");
   }
-  function reviseUserText(it, feedback, master, pending, sendBottom) {
+  function reviseUserText(it, feedback, master, pending, sendBottom, refs, docKind) {
     const c = it.clauseId ? effectiveClause(master, pending, it.clauseId) : null;
-    return [c ? clauseBlock(c, master, sendBottom) : "【條款】未對應", "", `【廠商異議】(${it.no}) ${it.text}`, "",
-      `【你先前的回覆】立場：${it.stance}\n中：${it.zh}\nEN：${it.en}`, "", `【使用者意見】${feedback}`].join("\n");
+    return [refsText(refs, docKind), c ? clauseBlock(c, master, sendBottom) : "【條款】未對應", "", `【廠商異議】(${it.no}) ${it.text}`, "",
+      `【你先前的回覆】立場：${it.stance}\n中：${it.zh}\nEN：${it.en}${it.sugZh || it.sugEn ? `\n建議修正條文：${it.sugZh} / ${it.sugEn}` : ""}`, "", `【使用者意見】${feedback}`].filter(x => x !== null).join("\n");
   }
 
   function parseJSON(text) {
@@ -338,6 +367,27 @@
 
   const EMPTY_MASTER = () => ({ clauses: [], proposals: [], logs: [], dict: [], changes: [] });
 
+  // 規則檔內的「制式條款參考」工作表：可在 Excel 中修正或貼上正式版本原文，工具讀取後覆寫內建參考庫
+  const REF_SHEET = "制式條款參考";
+  function addRefSheet(wb, HDR, list) {
+    if (wb.getWorksheet(REF_SHEET)) return false;
+    const ws = wb.addWorksheet(REF_SHEET, { views: [{ state: "frozen", ySplit: 1, xSplit: 3 }] });
+    ws.addRow(Ref.COLS).eachCell(c => Object.assign(c, { style: JSON.parse(JSON.stringify(HDR || { font: { bold: true } })) }));
+    [8, 12, 18, 30, 50, 50, 50, 50, 40, 40].forEach((w, i) => ws.getColumn(i + 1).width = w);
+    for (const r of Ref.toRows(list || Ref.STANDARDS)) ws.addRow(r).eachCell(c => c.alignment = { wrapText: true, vertical: "top" });
+    ws.getCell(`A${ws.rowCount + 2}`).value = `內建版本 ${Ref.VERSION}；FIDIC 欄為摘要（原文受著作權保護），「【待查證】」表示未能核對該版本原文。可直接修改或貼上正式原文，工具會以本表為準。`;
+    return true;
+  }
+  function readRefSheet(XLSX, data) {
+    try {
+      const isBuf = typeof Buffer !== "undefined" && Buffer.isBuffer(data);
+      const wb = XLSX.read(isBuf ? data : new Uint8Array(data), { type: isBuf ? "buffer" : "array" });
+      const ws = wb.Sheets[REF_SHEET]; if (!ws) return null;
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }).slice(1).filter(r => /^T?\w+\d/.test(String(r[0])) && r[2]);
+      return Ref.fromRows(rows);
+    } catch (e) { return null; }
+  }
+
   // 從零建立規則檔（欄位與「商務條款底線 MasterFile」一致）
   async function buildNewMaster(ExcelJS, { clauses, logs, dict }) {
     const wb = new ExcelJS.Workbook();
@@ -350,6 +400,7 @@
     const widths = { 條款庫: [12, 10, 16, 30, 40, 40, 32, 32, 32, 14, 45, 45, 10, 7, 10, 12, 13, 24], 提案區: [22, 12, 10, 12, 14, 16, 36, 40, 34, 12, 30, 12], 回覆紀錄: [24, 12, 10, 12, 16, 12, 40, 14, 45, 45, 12, 12, 24], 詞庫: [10, 30, 10, 12], 變更紀錄: [10, 12, 16, 40, 40, 14, 10] };
     const lists = { 條款庫: { M: ["有效", "待核", "範例待核", "停用"] }, 提案區: { D: ["新增條款", "修改內容", "新增範例", "停用條款"], J: ["核准", "修正後核准", "退回", "延至下月"] }, 回覆紀錄: { K: ["是", "否"] }, 詞庫: { A: Deid.TYPES } };
     const data = { 條款庫: (clauses || []).map(c => Core.SCHEMA.條款庫.map(k => c[k] || "")), 提案區: [], 回覆紀錄: logs || [], 詞庫: dict || [], 變更紀錄: [] };
+    addRefSheet(wb, HDR);
     for (const name of ["條款庫", "提案區", "回覆紀錄", "詞庫", "變更紀錄"]) {
       const ws = wb.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1, xSplit: 1 }] });
       ws.addRow(Core.SCHEMA[name]).eachCell(c => Object.assign(c, { style: JSON.parse(JSON.stringify(HDR)) }));
@@ -379,6 +430,7 @@
         row.commit(); have.add(k); res[counter]++;
       }
     };
+    res.refAdded = addRefSheet(wb, { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8710A" } }, alignment: { horizontal: "center", vertical: "middle", wrapText: true } });
     append("條款庫", (clauses || []).map(c => Core.SCHEMA.條款庫.map(k => c[k] || "")), 1, "clauses");
     append("提案區", proposals || [], 1, "proposals");
     append("回覆紀錄", logs || [], 1, "logs");
@@ -387,7 +439,7 @@
   }
 
   const Engine = { str, detectColumns, rowsToItems, ingestExcel, writeExcelSame, ingestDocx, writeDocxSame, writeClarification, resolveLang, replyText, isMostlyCJK,
-    effectiveClause, clauseBlock, EMPTY_MASTER, buildNewMaster, pastReplies, draftUserText, reviseUserText, parseJSON, geminiBody, bottomLeak, mergeIntoMaster,
+    effectiveClause, clauseBlock, EMPTY_MASTER, buildNewMaster, suggestText, readRefSheet, REF_SHEET, pastReplies, draftUserText, reviseUserText, parseJSON, geminiBody, bottomLeak, mergeIntoMaster,
     DRAFT_SYSTEM, REVISE_SYSTEM, SPLIT_SYSTEM, STANCES, BOTTOM };
   if (typeof module !== "undefined" && module.exports) module.exports = Engine; else root.Engine = Engine;
 })(typeof window !== "undefined" ? window : globalThis);

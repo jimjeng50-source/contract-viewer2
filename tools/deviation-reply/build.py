@@ -5,7 +5,7 @@ ROOT = Path(__file__).parent
 NM = ROOT / "node_modules"
 LIBS = {"/*__EXCELJS__*/": "exceljs/dist/exceljs.min.js", "/*__XLSX__*/": "xlsx/dist/xlsx.full.min.js", "/*__JSZIP__*/": "jszip/dist/jszip.min.js",
         "/*__PPTX__*/": "pptxgenjs/dist/pptxgen.bundle.js", "/*__PDFJS__*/": "pdfjs-dist/build/pdf.min.js", "/*__PDFJS_WORKER__*/": "pdfjs-dist/build/pdf.worker.min.js"}
-SRC = {"/*__DEID__*/": "src/deid.js", "/*__CORE__*/": "src/core.js", "/*__ENGINE__*/": "src/engine.js"}
+SRC = {"/*__DEID__*/": "src/deid.js", "/*__REF__*/": "src/reference.js", "/*__CORE__*/": "src/core.js", "/*__ENGINE__*/": "src/engine.js"}
 def safe(t): return re.sub(r"</script", r"<\\/script", t, flags=re.I).replace("<!--", "<\\!--")
 if not (NM / "exceljs").exists():
     subprocess.run(["npm", "install"], cwd=ROOT, check=True)

@@ -71,6 +71,7 @@ details summary{cursor:pointer}
   <div id="ruleBadge">尚未開啟規則檔</div>
   <button class="b" id="btnOpenRules">開啟既有規則檔</button>
   <button class="b" id="btnSaveRules" disabled>建立規則檔</button>
+  <button class="b" id="btnRefs">制式條款</button>
   <button class="b" id="btnReview">每月 Review</button>
   <button class="b" id="btnSettings">設定</button>
 </header>
@@ -138,6 +139,16 @@ details summary{cursor:pointer}
     <h2 style="margin-top:16px">尚未存回規則檔的資料</h2>
     <div id="sPending" class="muted"></div>
     <div class="row" style="margin-top:8px"><button class="b" id="sWipe">清除本機所有資料</button></div>
+  </div>
+</dialog>
+
+<!-- 制式條款參考 -->
+<dialog id="dlgRefs">
+  <div class="dh"><b>制式條款參考</b><span class="muted" id="refInfo"></span><span style="flex:1"></span><button class="b" onclick="this.closest('dialog').close()">關閉</button></div>
+  <div class="db">
+    <div class="note">AI 擬稿與判斷時參考的制式條款，依主題分組。<b>只供內部判斷，回覆廠商時不會提及出處。</b>FIDIC 欄為摘要（原文受著作權保護）；標「待查證」者未能核對該版本原文。規則檔的「制式條款參考」工作表可修改或貼上正式原文，工具會以規則檔為準。</div>
+    <div class="row" style="margin:8px 0"><select id="refGroup"><option value="">全部群組</option></select><input type="text" id="refQ" placeholder="搜尋主題或關鍵字"></div>
+    <div id="refTable"></div>
   </div>
 </dialog>
 
@@ -539,6 +550,186 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const Deid = { TYPES, detect, buildTerms, addTerm, mask, unmask, residual, verify, auditTokens, guessType, leftTokens,
     dictExportJson, dictExportCsv, dictParse, dictMerge, PROMPT_NOTE, sortTerms, assignCodes, orgAliases };
   if (typeof module !== "undefined" && module.exports) module.exports = Deid; else root.Deid = Deid;
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
+<script>/* reference.js — 制式條款參考庫（內部判斷與擬稿用，不在回覆中引用出處）
+ * 依主題分組；每格內容為摘要（FIDIC 原文受著作權保護，僅摘要條號與機制）。
+ * 「【待查證】」= 未能取得該版本原文核對，使用前請以手邊正式版本確認；規則檔「制式條款參考」工作表可覆寫本表。
+ * 版本：FIDIC 2017 第二版（紅皮書＝施工、銀皮書＝EPC/統包）；工程會工程／財物採購契約範本；採購契約要項；中鼎 PO(C) 20221003 版慣例。
+ * 2026-10-19 建立。
+ */
+(function (root) {
+  "use strict";
+  const U = "【待查證】";
+  const SRC = {
+    malawi: "https://svtp.gov.mw/wp-content/uploads/2020/07/MC_1__MC_2_Conditions_of_Contract_and_Contract_Forms_Volume_3_20-07-2020-1.pdf",
+    silverPrev: "https://pdfcoffee.com/fidic-silver-book-conditions-of-contract-for-epc-turnkey-projects-2nd-edition-2017-pdf-free.html",
+    silver522: "https://www.instituteccp.com/notices-under-fidic-silver-book-2017-edition-part-5/",
+    clyde: "https://www.clydeco.com/uploads/Blogs/brexit/FIDIC_Quick_Reference_Guide_-_Yellow_Book_2017.pdf",
+    fenTerm: "https://www.fenwickelliott.com/knowledge-hub/international-quarterlies/issue-37/the-developing-right-to-terminate-for-convenience-under-fidic/",
+    fenLD: "https://www.fenwickelliott.com/knowledge-hub/annual-review/ar-2022/delay-liquidated-damages-some-new-ideas-from-fidic/",
+    susp: "https://codozasady.pl/en/p/suspension-and-resumption-of-work-under-fidic-contract-terms",
+    pay1999: "https://internationalconstructionknowledgehub.com/wp-content/uploads/Clause-14.pdf",
+    pccItems: "https://lawweb.pcc.gov.tw/LawContent.aspx?id=GL000077",
+    tpeTpl: "https://www-ws.gov.taipei/001/Upload/825/relfile/61163/9080724/c76fd705-2702-4cbe-898e-3182e7ea4550.pdf",
+    tpeLecture: "https://www-ws.gov.taipei/001/Upload/342/relfile/36967/8163604/b56befde-db18-48e6-8ce5-ec6fa3bf61e8.pdf",
+    pcc100: "https://www.huludun.taichung.gov.tw/df_ufiles/h/%E5%B7%A5%E7%A8%8B%E6%8E%A1%E8%B3%BC%E5%A5%91%E7%B4%84%E7%AF%84%E6%9C%AC1001011%E6%A0%B8%E5%AE%9A.pdf",
+    lawtwLD: "https://www.lawtw.com/archives/403709",
+    judicial111: "https://www.judicial.gov.tw/tw/dl-182242-68abfb07b4434f06b6b8afee33bd8b84.html",
+    ctci: "contract-viewer2 lessons/20260703-ctci-po-structure.md（中鼎 PO(C) 20221003 版）",
+  };
+
+  const GROUPS = ["期限", "金額上限", "保證與款項", "責任與保固", "契約變動與爭議"];
+
+  const STANDARDS = [
+    { id: "T01", group: "期限", name: "文件審閱期限", keywords: "審閱;審查;核可;送審;review;approval;comment;no-objection;document submission;drawing",
+      red: `${U}紅皮書 4.4.1 承包商文件（承包商設計部分）由工程師審閱，審閱期依 Contract Data。`,
+      silver: "銀皮書 5.2.2：業主審閱承包商文件，審閱期一般為 21 天；期限內未發通知視為無異議；退件重送重新起算。6.12 關鍵人員異議期 14 天。",
+      pccW: "工程範本：設計審查時程由機關於招標時載明（統包範本「機關審查時程為＿日」）；估驗計價機關 15 工作天內完成審核（含技術服務廠商審查時間）。",
+      pccG: `${U}財物範本：送審文件審查期限由機關於招標時載明。`,
+      ctci: "",
+      src: [SRC.silver522, SRC.tpeTpl] },
+    { id: "T02", group: "期限", name: "請款與付款期限", keywords: "付款;付款期限;付款天期;請款;發票;估驗;計價;payment;payment terms;invoice;days;net;due",
+      red: "紅皮書 14.6 工程師收到請款單後 28 天內簽發期中付款證明；14.7 期中款於工程師收到請款單後 56 天內付款，最終款 56 天；14.8 遲延付款按央行貼現率加 3% 計付融資費用（逐月複利）。",
+      silver: `${U}銀皮書 14.7：無工程師簽證，業主收到請款單後 56 天內付款；14.8 遲延融資費用同紅皮書。`,
+      pccW: "工程範本第 5 條：估驗款機關 15 工作天內審核、接到請款單據後 15 工作天內付款（涉補助款 30 工作天）；尾款於驗收合格後 15 日內簽發結算驗收證明，接到請款單據後 15 工作天內一次無息結付。",
+      pccG: `${U}財物範本：驗收合格後，機關於接到請款單據後 15 工作天內付款。採購契約要項第 34 點：契約應載明付款條件及期限。`,
+      ctci: "中鼎 PO B 條：45 個日曆天電匯；各期款（預付 10%／文件 5%／材料 10%／交貨／尾款 10%）加總應為 100%。",
+      src: [SRC.malawi, SRC.pay1999, SRC.tpeTpl, SRC.tpeLecture, SRC.pccItems, SRC.ctci] },
+    { id: "T03", group: "期限", name: "通知、索賠與工期展延申請期限", keywords: "通知;索賠;展延;工期展延;延期;claim;notice;extension of time;EOT;time bar",
+      red: "20.2：索賠事件知悉後 28 天內通知（逾期失權），84 天內提出完整索賠；3.7 協商 42 天＋決定 42 天；不服決定 28 天內發 NOD。",
+      silver: "同紅皮書（20.2 的 28／84 天；3.5 協商 42 天＋決定 42 天；NOD 28 天）。",
+      pccW: "工程範本第 7 條：事故發生或消滅後 7 日內通知機關（未載明時），45 日內檢具事證書面申請展延（未載明時）。",
+      pccG: `${U}財物範本：比照工程範本，通知與申請期限由機關載明。`,
+      ctci: "",
+      src: [SRC.clyde, SRC.silverPrev, SRC.pcc100, SRC.judicial111] },
+    { id: "T04", group: "金額上限", name: "總責任上限", keywords: "責任上限;賠償上限;總賠償;limitation of liability;liability cap;aggregate liability;cap;total liability",
+      red: "1.15：承包商總責任以 Contract Data 所載金額為上限，未載明者為得標契約金額（Accepted Contract Amount）；詐欺、重大過失、故意違約、輕率不當行為不受上限限制。",
+      silver: "Limitation of Liability 條：上限為 Contract Data 所載金額，未載明者為契約價格；業主供料（2.6）、臨時水電（4.19）、智慧財產（17.3）、17.4 第一段人身傷亡賠償，以及詐欺、重大過失、故意違約、輕率不當行為不受上限限制。",
+      pccW: "工程範本：損害賠償上限由機關載明，未載明者為契約價金總額；廠商故意隱瞞瑕疵、故意或重大過失、對第三人侵權不受上限限制；逾期違約金不計入此上限。",
+      pccG: `${U}財物範本：損害賠償上限機制比照工程範本。採購契約要項第 58–60 點：機關得於契約訂明損害賠償範圍、上限及除外情形。`,
+      ctci: "",
+      src: [SRC.malawi, SRC.silverPrev, SRC.tpeLecture, SRC.lawtwLD, SRC.pccItems] },
+    { id: "T05", group: "金額上限", name: "逾期罰款（延遲損害賠償）", keywords: "逾期;逾期罰款;違約金;延遲;遲延;約定損失賠償;LD;liquidated damages;delay damages;penalty;late delivery",
+      red: "8.8：費率與上限載於 Contract Data；完工前為業主對延遲的唯一金錢救濟（詐欺、重大過失、故意違約、輕率不當行為除外）。MDB 範例：每日 0.05%、上限 10%（得標金額扣除暫定金額）。",
+      silver: "8.8：同紅皮書，費率與上限載於 Contract Data。",
+      pccW: "工程範本：每日依契約價金總額 1‰（未載明時），未完成部分不影響使用者按該部分價金 3‰；總額以契約價金總額 20% 為上限（機關可訂較低，不得高於 20%）。",
+      pccG: "財物範本：每日比率由機關載明；採購契約要項第 45 點：逾期違約金以契約價金總額 20% 為上限。",
+      ctci: "中鼎 PO E 條「約定損失賠償」：每逾期一個日曆天 0.1%（文件 0.05%），上限 10%；低於 10% 須主管核准。",
+      src: [SRC.fenLD, SRC.malawi, SRC.lawtwLD, SRC.pccItems, SRC.ctci] },
+    { id: "T06", group: "金額上限", name: "間接損失排除", keywords: "間接損失;衍生損害;所失利益;利潤損失;consequential;indirect;loss of profit;loss of use;loss of production",
+      red: "1.15：雙方互不負擔使用損失、利潤損失、合約損失及間接或衍生損失，但 8.8 延遲損害等特定條款與詐欺、重大過失等情形除外（除外條次以原文為準）。",
+      silver: "同紅皮書的雙向排除架構（除外條次以原文為準）。",
+      pccW: "工程會 96.5.24 函：廠商的損害賠償責任得不包含機關所失利益，但機關應於招標文件預先載明。",
+      pccG: `${U}財物範本：同工程會函釋原則。`,
+      ctci: "",
+      src: [SRC.malawi, SRC.tpeLecture] },
+    { id: "T07", group: "保證與款項", name: "履約保證", keywords: "履約保證;履保;保證金;銀行保證;performance security;performance bond;bank guarantee;PB",
+      red: "4.2：收到得標通知書後 28 天內提交，金額依 Contract Data。",
+      silver: "4.2：雙方簽約後 28 天內提交；契約價格因變更增減逾 20% 時調整金額；保固證書簽發後 21 天內返還；到期前 28 天未取得保固證書須展延。",
+      pccW: "工程範本第 14 條：比例由機關載明；驗收合格且無待解決事項後 30 日內發還，可依進度分次發還（查核金額以上不少於 4 次）；不可歸責於廠商而暫停履約逾 6 個月（未載明時），提前發還。",
+      pccG: `${U}財物範本：比例由機關載明；驗收合格後發還。`,
+      ctci: "中鼎 PO B 條：保證書於 28 日曆天內提交，有效期至保固期滿後 90 天；英文保證書非台灣銀行開立須經兆豐或 HSBC 通知。",
+      src: [SRC.malawi, SRC.silverPrev, SRC.tpeTpl, SRC.pcc100, SRC.ctci] },
+    { id: "T08", group: "保證與款項", name: "預付款及還款保證", keywords: "預付款;預付;訂金;頭款;advance payment;down payment;APG;advance payment guarantee",
+      red: "14.2：預付款金額與扣回方式依 Contract Data，須先提交等額預付款保證，隨扣回遞減。",
+      silver: "14.2：同紅皮書。",
+      pccW: "工程範本第 5 條：比例由機關載明，查核金額以上不逾訂約總價 30%；估驗達訂約總價 20% 起至 80% 止逐期扣回；須提交預付款還款保證。",
+      pccG: `${U}財物範本：預付款比例由機關載明，並須預付款還款保證。`,
+      ctci: "中鼎 PO B 條：預付款 10%（須預付款保證）。",
+      src: [SRC.pay1999, SRC.tpeTpl, SRC.tpeLecture, SRC.pccItems, SRC.ctci] },
+    { id: "T09", group: "保證與款項", name: "保留款", keywords: "保留款;保留;尾款;retention;retention money;holdback",
+      red: "14.9：比例與上限依 Contract Data；移交證書後退還一半，其餘於瑕疵通知期屆滿後退還；可以保證替代。MDB 範例：5%、上限 5%。",
+      silver: "14.9：同紅皮書。",
+      pccW: "工程範本第 5 條：每期估驗扣 5% 保留款；查核金額以上工程初驗合格且無逾期，可請求退還已扣保留款的 50%；有重大缺失機關得提高為 2 倍。",
+      pccG: `${U}財物範本：通常不扣保留款，以保固保證金替代。`,
+      ctci: "中鼎 PO B 條：尾款 10%。",
+      src: [SRC.malawi, SRC.pay1999, SRC.tpeTpl, SRC.ctci] },
+    { id: "T10", group: "責任與保固", name: "保固與瑕疵責任期", keywords: "保固;保固期;瑕疵;瑕疵擔保;warranty;defects notification period;DNP;defects liability;guarantee period",
+      red: "瑕疵通知期依 Contract Data，未載明者為 1 年；因瑕疵無法使用的期間可展延（11.3，展延上限以原文為準）；設備的潛在瑕疵責任於瑕疵通知期屆滿後 2 年終止（11.10）。",
+      silver: "1.1.24／11.3：同紅皮書，未載明者為 1 年。",
+      pccW: "工程範本：保固期由機關載明，未載明時非結構物 1 年、結構物 5 年（100.10.11 版）。",
+      pccG: `${U}財物範本：保固期由機關載明，未載明者為 1 年。`,
+      ctci: "中鼎 PO D 條：驗收日起 12 個月或送達工地後 24 個月，以先到者為準。",
+      src: [SRC.silverPrev, SRC.clyde, SRC.pcc100, SRC.ctci] },
+    { id: "T11", group: "責任與保固", name: "保險", keywords: "保險;投保;營造綜合險;安裝工程;運輸險;第三人責任;insurance;CAR;EAR;cargo;third party liability",
+      red: `${U}第 19 條：承包商投保工程、設備、第三人責任及員工保險，以雙方為共同被保險人；險種與金額依 Contract Data。`,
+      silver: `${U}第 19 條：同紅皮書。`,
+      pccW: "工程範本第 13 條：廠商依招標文件投保營造或安裝工程綜合保險、雇主意外責任險等。",
+      pccG: `${U}財物範本：依招標文件投保運輸及安裝相關保險。`,
+      ctci: "中鼎 PO K 條：保險條款不可刪除，航運保險應延伸至工地。",
+      src: [SRC.judicial111, SRC.ctci] },
+    { id: "T12", group: "契約變動與爭議", name: "契約變更與數量增減", keywords: "變更;追加;追減;設計變更;數量增減;variation;change order;change;VO",
+      red: "第 13 條：工程師可指示變更；變更計價的利潤預設 5%（Contract Data 可另訂）。",
+      silver: "第 13 條：業主可指示變更；2.4 單一變更逾契約價格 10% 或累計逾 30% 時，承包商可要求業主提出資金證明。",
+      pccW: "工程範本第 3 條：總價結算時個別項目數量增減逾 5% 部分依原單價計價，增減達 30% 以上得合理調整單價。採購契約要項：變更須雙方合意並作成書面，否則無效。",
+      pccG: "採購契約要項第 20–24 點：機關得於契約範圍內要求變更，須雙方書面合意。",
+      ctci: "",
+      src: [SRC.clyde, SRC.silverPrev, SRC.tpeTpl, SRC.pccItems] },
+    { id: "T13", group: "契約變動與爭議", name: "物價調整", keywords: "物價調整;價格調整;調價;漲價;固定價;指數;price escalation;price adjustment;fixed price;firm price;indexation",
+      red: `${U}13.7：依 Contract Data 的成本指數公式調整，未列公式則不調整。`,
+      silver: `${U}13.7：同紅皮書；EPC 統包常約定不調整。`,
+      pccW: "工程範本第 5 條：營造工程物價總指數漲跌逾 2.5% 部分調整；或個別項目 10%、中分類 5%、總指數 2.5% 依序調整。採購契約要項：管理費、利潤不調整。",
+      pccG: "採購契約要項第 38–39 點：指數調整須載明項目、基準、公式及佐證。",
+      ctci: "",
+      src: [SRC.pcc100, SRC.tpeLecture, SRC.pccItems] },
+    { id: "T14", group: "契約變動與爭議", name: "暫停執行", keywords: "暫停;停工;暫停履約;suspension;suspend;stand-by",
+      red: "第 8 條（暫停條款）：業主暫停逾 84 天，承包商可要求復工；28 天內未獲准許，可視為刪除該部分工作，全部暫停者可終止契約；暫停的工期與費用可請求。",
+      silver: `${U}同紅皮書（84 天＋28 天機制）。`,
+      pccW: "工程範本：機關要求暫停時，廠商增加的必要費用由機關負擔；不可歸責於廠商暫停逾 6 個月（未載明時），履約保證金提前發還。廠商得終止的暫停期間門檻【待查證】。",
+      pccG: "採購契約要項第 68–69 點：非可歸責於廠商的暫停，機關得補償必要費用並酌予展延。",
+      ctci: "",
+      src: [SRC.susp, SRC.pcc100, SRC.judicial111, SRC.pccItems] },
+    { id: "T15", group: "契約變動與爭議", name: "終止與解除", keywords: "終止;解約;終止契約;任意終止;便利終止;政策變更;termination;terminate;for convenience;for default",
+      red: "15.5 便利終止：通知後於承包商收到通知或業主返還履約保證（較晚者）後 28 天生效；2017 版承包商可請求利潤損失等；終止後業主不得自行或交他人施作該部分。",
+      silver: "15.5：同紅皮書。",
+      pccW: "政府採購法第 64 條、採購契約要項：因政策變更終止或解除契約須報上級機關核准，並補償廠商因此所生損失；可歸責廠商時機關得自行或洽他廠商完成，費用由廠商負擔。",
+      pccG: "同工程（政府採購法第 64 條）。",
+      ctci: "",
+      src: [SRC.fenTerm, SRC.pccItems] },
+    { id: "T16", group: "契約變動與爭議", name: "爭議處理與準據法", keywords: "爭議;仲裁;調解;訴訟;準據法;管轄;dispute;arbitration;mediation;governing law;jurisdiction",
+      red: "第 21 條：爭議先送 DAAB（42 天內提交），不服決定 28 天內發 NOD，再經友好解決後仲裁。",
+      silver: "第 21 條：同紅皮書。",
+      pccW: "採購契約要項第 70–74 點：先協議，未果得申請調解、申訴、仲裁或訴訟；準據法為中華民國法律；管轄法院為機關所在地法院。",
+      pccG: "同工程。",
+      ctci: "中鼎 PO G 條：台灣法、台北仲裁。",
+      src: [SRC.clyde, SRC.pccItems, SRC.ctci] },
+  ];
+
+  const COLS = ["主題ID", "群組", "主題", "關鍵字", "FIDIC紅皮書", "FIDIC銀皮書", "工程會工程範本", "工程會財物範本", "中鼎PO慣例", "來源"];
+  function toRows(list) { return list.map(s => [s.id, s.group, s.name, s.keywords, s.red, s.silver, s.pccW, s.pccG, s.ctci, (s.src || []).join("\n")]); }
+  function fromRows(rows) {
+    return rows.filter(r => r && r[0]).map(r => ({ id: String(r[0]).trim(), group: r[1] || "其他", name: r[2] || "", keywords: r[3] || "", red: r[4] || "", silver: r[5] || "", pccW: r[6] || "", pccG: r[7] || "", ctci: r[8] || "", src: String(r[9] || "").split(/\n/).filter(Boolean) }));
+  }
+  // 規則檔的工作表優先：同 ID 覆寫，新 ID 附加
+  function merge(base, override) {
+    const out = base.map(s => Object.assign({}, s));
+    for (const o of override || []) { const i = out.findIndex(s => s.id === o.id); if (i >= 0) out[i] = Object.assign({}, out[i], Object.fromEntries(Object.entries(o).filter(([, v]) => v && (!Array.isArray(v) || v.length)))); else out.push(o); }
+    return out;
+  }
+  function match(text, list, n) {
+    const t = String(text || "").toLowerCase();
+    return (list || STANDARDS).map(s => {
+      let score = 0;
+      for (const k of String(s.keywords).split(/[;；]/).map(x => x.trim().toLowerCase()).filter(x => x.length >= 2)) {
+        const ascii = /^[\x00-\x7f]+$/.test(k);
+        if (ascii ? new RegExp(`(^|[^a-z])${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z]|$)`).test(t) : t.includes(k)) score += Math.min(k.length, 6);
+      }
+      return { s, score };
+    }).filter(x => x.score).sort((a, b) => b.score - a.score).slice(0, n || 2).map(x => x.s);
+  }
+  function block(s, docKind) {
+    const L = [`〈${s.id} ${s.group}／${s.name}〉`];
+    if (docKind !== "goods" && s.pccW) L.push(`  工程會工程範本：${s.pccW}`);
+    if (docKind !== "works" && s.pccG) L.push(`  工程會財物範本：${s.pccG}`);
+    if (s.red) L.push(`  FIDIC 紅皮書：${s.red}`);
+    if (s.silver) L.push(`  FIDIC 銀皮書：${s.silver}`);
+    if (s.ctci) L.push(`  中鼎 PO 慣例：${s.ctci}`);
+    return L.join("\n").replace(/【待查證】/g, "（未核對原文）");
+  }
+
+  const Ref = { STANDARDS, GROUPS, COLS, toRows, fromRows, merge, match, block, VERSION: "2026-10-19" };
+  if (typeof module !== "undefined" && module.exports) module.exports = Ref; else root.Ref = Ref;
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
 <script>/* core.js — 條款回覆工作台核心邏輯（瀏覽器與 Node 通用；XLSX / PptxGenJS 由呼叫端注入） */
@@ -987,6 +1178,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   "use strict";
   const Core = root.Core || (typeof require !== "undefined" ? require("./core.js") : null);
   const Deid = root.Deid || (typeof require !== "undefined" ? require("./deid.js") : null);
+  const Ref = root.Ref || (typeof require !== "undefined" ? require("./reference.js") : null);
   const str = v => (v === null || v === undefined ? "" : typeof v === "object" && v.richText ? v.richText.map(r => r.text).join("") : typeof v === "object" && "result" in v ? String(v.result ?? "") : typeof v === "object" && v.text ? String(v.text) : v instanceof Date ? Core.normDate(v) : String(v)).trim();
 
   // ───────── 欄位辨識（Excel 與 Word 表格共用） ─────────
@@ -1085,12 +1277,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         hc.style = JSON.parse(JSON.stringify(sc.style || {}));
       }
     }
+    const hasSug = items.some(it => suggestText(it, lang));
+    const scol = hasSug ? Math.max(col, ws.columnCount) + 1 : 0;
+    if (scol) {
+      ws.getColumn(scol).width = 50;
+      if (headerRow) { const hc = ws.getCell(headerRow, scol); hc.value = SUG_HDR(lang); hc.style = JSON.parse(JSON.stringify(ws.getCell(headerRow, col).style || {})); }
+    }
     for (const it of items) {
       const r = it.rowIndex + 1;
       const c = ws.getCell(r, col), sc = ws.getCell(r, ing.cols.text + 1);
       if (ing.cols.reply < 0) c.style = JSON.parse(JSON.stringify(sc.style || {}));
       c.value = replyText(it, lang);
       c.alignment = Object.assign({}, c.alignment || {}, { wrapText: true, vertical: "top" });
+      if (scol && suggestText(it, lang)) { const g = ws.getCell(r, scol); g.style = JSON.parse(JSON.stringify(sc.style || {})); g.value = suggestText(it, lang); g.alignment = { wrapText: true, vertical: "top" }; }
     }
     return wb.xlsx.writeBuffer();
   }
@@ -1174,7 +1373,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       for (const it of items) {
         const tcs = directChildren(trs[it.rowIndex], "tc");
         const tc = col < tcs.length ? tcs[col] : tcs[tcs.length - 1];
-        setCellText(doc, tc, replyText(it, lang));
+        setCellText(doc, tc, replyText(it, lang) + (suggestText(it, lang) ? `\n\n【${SUG_HDR(lang)}】\n${suggestText(it, lang)}` : ""));
       }
     } else {
       // 無表格：在文末（sectPr 前）加「我方回覆」標題與回覆表
@@ -1188,7 +1387,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const grid = el(doc, "tblGrid"); for (const w of ["800", "4200", "4600"]) grid.appendChild(el(doc, "gridCol", { w })); tbl.appendChild(grid);
       const row = (cells, bold) => { const tr = el(doc, "tr"); cells.forEach(c => { const tc = el(doc, "tc"); tc.appendChild(makePara(doc, c, bold)); tr.appendChild(tc); }); tbl.appendChild(tr); };
       row(["項次 No.", "廠商異議 Vendor Deviation", "我方回覆 Our Response"], true);
-      for (const it of items) row([it.no, it.text, replyText(it, lang)]);
+      for (const it of items) row([it.no, it.text, replyText(it, lang) + (suggestText(it, lang) ? `\n\n【${SUG_HDR(lang)}】\n${suggestText(it, lang)}` : "")]);
       add(tbl);
     }
     zip.file("word/document.xml", new XMLSerializer().serializeToString(doc));
@@ -1199,20 +1398,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   async function writeClarification(ExcelJS, items, ctx, lang) {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Clarification");
-    ws.columns = [{ width: 8 }, { width: 14 }, { width: 55 }, { width: 60 }];
+    const hasSug = items.some(it => suggestText(it, lang));
+    ws.columns = [{ width: 8 }, { width: 14 }, { width: 55 }, { width: 60 }].concat(hasSug ? [{ width: 55 }] : []);
     const t = ws.addRow([`${ctx.project || ""} ${ctx.vendor || ""} 商務澄清回覆 Commercial Clarification`.trim()]);
     t.font = { bold: true, size: 14 }; ws.mergeCells(1, 1, 1, 4);
     ws.addRow([`日期 Date：${Core.today()}`]);
     ws.addRow([]);
-    const h = ws.addRow(["項次\nNo.", "條次\nRef.", "廠商異議\nVendor Deviation", lang === "zh" ? "我方回覆" : lang === "en" ? "Our Response" : "我方回覆\nOur Response"]);
+    const h = ws.addRow(["項次\nNo.", "條次\nRef.", "廠商異議\nVendor Deviation", lang === "zh" ? "我方回覆" : lang === "en" ? "Our Response" : "我方回覆\nOur Response"].concat(hasSug ? [SUG_HDR(lang)] : []));
     h.eachCell(c => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8710A" } }; c.alignment = { wrapText: true, vertical: "middle", horizontal: "center" }; });
     for (const it of items) {
-      const r = ws.addRow([it.no, it.ref, it.text, replyText(it, lang)]);
+      const r = ws.addRow([it.no, it.ref, it.text, replyText(it, lang)].concat(hasSug ? [suggestText(it, lang)] : []));
       r.eachCell(c => { c.alignment = { wrapText: true, vertical: "top" }; c.border = { top: { style: "thin", color: { argb: "FFD9D9D9" } }, bottom: { style: "thin", color: { argb: "FFD9D9D9" } } }; });
     }
     ws.views = [{ state: "frozen", ySplit: 4 }];
     return wb.xlsx.writeBuffer();
   }
+
+  // 建議修正條文（只在有條件接受時由 AI 提供）
+  function suggestText(it, lang) {
+    if (!it.sugZh && !it.sugEn) return "";
+    if (lang === "auto") lang = isMostlyCJK(it.text) ? "zh" : "en";
+    if (lang === "zh") return it.sugZh || it.sugEn;
+    if (lang === "en") return it.sugEn || it.sugZh;
+    return [it.sugZh, it.sugEn].filter(Boolean).join("\n\n");
+  }
+  const SUG_HDR = lang => lang === "zh" ? "建議修正條文" : lang === "en" ? "Proposed Clause Wording" : "建議修正條文 Proposed Clause";
 
   // ───────── 回覆語言 ─────────
   function isMostlyCJK(s) { const t = str(s).replace(/\s/g, ""); if (!t) return true; const c = (t.match(/[一-鿿]/g) || []).length; return c / t.length > 0.25; }
@@ -1266,17 +1476,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     "5. 中文用台灣商務書信用語（繁體），英文用正式合約書信英文，中英意思一致；每版 1–4 句，可直接貼入澄清表，不要稱謂署名。",
     "6. 文中〔類別NN〕代號為已遮蔽的機密資訊，必須原樣保留。",
     "7. 若沒有任何相關條款規則（規則庫尚在累積中），依台灣工程統包商買方的一般立場：原則維持我方原條款、請廠商說明理由，不自行讓步；並在 clauseName 給一個簡短條款名稱（如：付款條件、逾期罰款、保固）。",
-    `輸出：僅輸出 JSON：{"items":[{"no":"項次","clauseId":"條款ID或空字串","clauseName":"條款名稱","stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"中文回覆","en":"English reply","reason":"給承辦看的一句判斷理由（中文，可提及底線）"}]}`,
+    "8. 判斷依據的優先順序：使用者新規則 > 內部底線 > 中鼎 PO 慣例 > 工程會範本（國內公共工程慣例）＞ FIDIC（國際慣例，較平衡）。「制式條款參考」用來判斷廠商要求是否超出國內外慣例、決定讓步是否合理，並作為擬稿寫法的範本。",
+    "9. 「制式條款參考」只供內部判斷，回覆中絕不可提及 FIDIC、紅皮書、銀皮書、工程會、範本、條號或「國際慣例」等出處。",
+    "10. 只有立場為『有條件接受』時，另外給 sugZh／sugEn：可直接放入合約的修正條文（中英各一段，比照制式條款的結構與用語：主體、期限或比例、條件、例外；不得超出底線），其他立場留空字串。",
+    "11. topicId 填最相關的制式條款主題ID（如 T02），沒有就空字串。",
+    `輸出：僅輸出 JSON：{"items":[{"no":"項次","clauseId":"條款ID或空字串","clauseName":"條款名稱","topicId":"T01–T16 或空字串","stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"中文回覆","en":"English reply","sugZh":"建議修正條文（僅有條件接受）","sugEn":"Proposed clause (conditional acceptance only)","reason":"給承辦看的一句判斷理由（中文，可提及底線與所參考的制式條款）"}]}`,
   ].join("\n");
 
   const REVISE_SYSTEM = [
     "你是台灣 EPC 工程統包商（買方）的資深採購合約專員。使用者對你先前草擬的異議回覆提出意見，請依意見改寫，並判斷這個意見能否一般化成以後可沿用的規則。",
-    "改寫規則同前：不可在回覆透露內部底線；中文台灣商務用語、英文正式；中英一致；〔類別NN〕代號原樣保留。",
+    "改寫規則同前：不可在回覆透露內部底線；回覆中不得提及 FIDIC、工程會、範本、條號等出處（制式條款只供內部判斷）；中文台灣商務用語、英文正式；中英一致；〔類別NN〕代號原樣保留。",
+    "立場為『有條件接受』時，給 sugZh／sugEn：比照制式條款寫法、可直接放入合約的修正條文；其他立場留空字串。",
+    "規則的 topicId 填最相關的制式條款主題ID（如 T02），讓規則依主題歸類；clauseName 優先使用該主題名稱。",
     "規則萃取：若使用者的意見表達了可一般化的原則（例如『付款天期最多同意 60 天』『保固可同意交貨後 18 個月孰先』『這類要求一律拒絕』），請轉成一條規則；",
     "field 只能是：底線_可接受、底線_需升級、底線_不可接受、慣用回覆_中、慣用回覆_EN；若只是針對這一案的措辭修改（如『語氣軟一點』），rule 為 null。",
     "若規則庫沒有對應條款，clauseId 留空，並給 clauseName（簡短條款名稱）、category（付款／保證／保固／罰則／責任／價格／交貨／保險／終止／變更／爭議／其他）與 keywords（中英文關鍵字 4–8 個，分號分隔，供日後自動比對）。",
     "value 要寫成可直接放進規則庫的完整一句話，不要包含〔代號〕或個案名稱。",
-    `輸出：僅輸出 JSON：{"stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"…","en":"…","reason":"一句說明","rule":{"clauseId":"條款ID或空字串","clauseName":"…","category":"…","keywords":"…","field":"…","value":"…","summary":"一句話描述這條規則"}或null}`,
+    `輸出：僅輸出 JSON：{"stance":"${STANCES.join("|")}","bottom":"可接受|需升級|不可接受|無對應","zh":"…","en":"…","sugZh":"…或空字串","sugEn":"…或空字串","topicId":"…","reason":"一句說明","rule":{"clauseId":"條款ID或空字串","topicId":"T01–T16 或空字串","clauseName":"…","category":"…","keywords":"…","field":"…","value":"…","summary":"一句話描述這條規則"}或null}`,
   ].join("\n");
 
   const SPLIT_SYSTEM = [
@@ -1286,17 +1502,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     '輸出：僅輸出 JSON：{"items":[{"no":"項次","ref":"廠商引用的條次（沒有就空字串）","text":"異議原文"}]}',
   ].join("\n");
 
-  function draftUserText(items, clauseIds, master, pending, sendBottom) {
+  const REF_HEAD = "【制式條款參考（只供內部判斷與擬稿，回覆中不得提及出處）】";
+  function refsText(refs, docKind) { return refs && refs.length ? [REF_HEAD, refs.map(s => Ref.block(s, docKind)).join("\n")].join("\n") : ""; }
+  function draftUserText(items, clauseIds, master, pending, sendBottom, refs, docKind) {
     const blocks = [...new Set(clauseIds.filter(Boolean))].map(id => effectiveClause(master, pending, id)).filter(Boolean).map(c => clauseBlock(c, master, sendBottom));
     const L = ["【相關條款規則】", blocks.length ? blocks.join("\n\n") : "（未比對到條款，請依一般採購買方立場判斷並將 clauseId 留空）", "", "【條款清單（供 clauseId 參考）】",
       master.clauses.filter(c => c.狀態 !== "停用").map(c => `${c.條款ID} ${c.條款名稱}`).join("；"), "", "【廠商異議】"];
-    for (const it of items) L.push(`(${it.no})${it.ref ? "［條次 " + it.ref + "］" : ""}${it.hint ? "［本機比對：" + it.hint + "］" : ""} ${it.text}`);
+    for (const it of items) L.push(`(${it.no})${it.ref ? "［條次 " + it.ref + "］" : ""}${it.hint ? "［本機比對：" + it.hint + "］" : ""}${it.topics && it.topics.length ? "［制式主題：" + it.topics.join("/") + "］" : ""} ${it.text}`);
+    const rt = refsText(refs, docKind);
+    if (rt) L.unshift(rt, "");
     return L.join("\n");
   }
-  function reviseUserText(it, feedback, master, pending, sendBottom) {
+  function reviseUserText(it, feedback, master, pending, sendBottom, refs, docKind) {
     const c = it.clauseId ? effectiveClause(master, pending, it.clauseId) : null;
-    return [c ? clauseBlock(c, master, sendBottom) : "【條款】未對應", "", `【廠商異議】(${it.no}) ${it.text}`, "",
-      `【你先前的回覆】立場：${it.stance}\n中：${it.zh}\nEN：${it.en}`, "", `【使用者意見】${feedback}`].join("\n");
+    return [refsText(refs, docKind), c ? clauseBlock(c, master, sendBottom) : "【條款】未對應", "", `【廠商異議】(${it.no}) ${it.text}`, "",
+      `【你先前的回覆】立場：${it.stance}\n中：${it.zh}\nEN：${it.en}${it.sugZh || it.sugEn ? `\n建議修正條文：${it.sugZh} / ${it.sugEn}` : ""}`, "", `【使用者意見】${feedback}`].filter(x => x !== null).join("\n");
   }
 
   function parseJSON(text) {
@@ -1322,6 +1542,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   const EMPTY_MASTER = () => ({ clauses: [], proposals: [], logs: [], dict: [], changes: [] });
 
+  // 規則檔內的「制式條款參考」工作表：可在 Excel 中修正或貼上正式版本原文，工具讀取後覆寫內建參考庫
+  const REF_SHEET = "制式條款參考";
+  function addRefSheet(wb, HDR, list) {
+    if (wb.getWorksheet(REF_SHEET)) return false;
+    const ws = wb.addWorksheet(REF_SHEET, { views: [{ state: "frozen", ySplit: 1, xSplit: 3 }] });
+    ws.addRow(Ref.COLS).eachCell(c => Object.assign(c, { style: JSON.parse(JSON.stringify(HDR || { font: { bold: true } })) }));
+    [8, 12, 18, 30, 50, 50, 50, 50, 40, 40].forEach((w, i) => ws.getColumn(i + 1).width = w);
+    for (const r of Ref.toRows(list || Ref.STANDARDS)) ws.addRow(r).eachCell(c => c.alignment = { wrapText: true, vertical: "top" });
+    ws.getCell(`A${ws.rowCount + 2}`).value = `內建版本 ${Ref.VERSION}；FIDIC 欄為摘要（原文受著作權保護），「【待查證】」表示未能核對該版本原文。可直接修改或貼上正式原文，工具會以本表為準。`;
+    return true;
+  }
+  function readRefSheet(XLSX, data) {
+    try {
+      const isBuf = typeof Buffer !== "undefined" && Buffer.isBuffer(data);
+      const wb = XLSX.read(isBuf ? data : new Uint8Array(data), { type: isBuf ? "buffer" : "array" });
+      const ws = wb.Sheets[REF_SHEET]; if (!ws) return null;
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }).slice(1).filter(r => /^T?\w+\d/.test(String(r[0])) && r[2]);
+      return Ref.fromRows(rows);
+    } catch (e) { return null; }
+  }
+
   // 從零建立規則檔（欄位與「商務條款底線 MasterFile」一致）
   async function buildNewMaster(ExcelJS, { clauses, logs, dict }) {
     const wb = new ExcelJS.Workbook();
@@ -1334,6 +1575,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const widths = { 條款庫: [12, 10, 16, 30, 40, 40, 32, 32, 32, 14, 45, 45, 10, 7, 10, 12, 13, 24], 提案區: [22, 12, 10, 12, 14, 16, 36, 40, 34, 12, 30, 12], 回覆紀錄: [24, 12, 10, 12, 16, 12, 40, 14, 45, 45, 12, 12, 24], 詞庫: [10, 30, 10, 12], 變更紀錄: [10, 12, 16, 40, 40, 14, 10] };
     const lists = { 條款庫: { M: ["有效", "待核", "範例待核", "停用"] }, 提案區: { D: ["新增條款", "修改內容", "新增範例", "停用條款"], J: ["核准", "修正後核准", "退回", "延至下月"] }, 回覆紀錄: { K: ["是", "否"] }, 詞庫: { A: Deid.TYPES } };
     const data = { 條款庫: (clauses || []).map(c => Core.SCHEMA.條款庫.map(k => c[k] || "")), 提案區: [], 回覆紀錄: logs || [], 詞庫: dict || [], 變更紀錄: [] };
+    addRefSheet(wb, HDR);
     for (const name of ["條款庫", "提案區", "回覆紀錄", "詞庫", "變更紀錄"]) {
       const ws = wb.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1, xSplit: 1 }] });
       ws.addRow(Core.SCHEMA[name]).eachCell(c => Object.assign(c, { style: JSON.parse(JSON.stringify(HDR)) }));
@@ -1363,6 +1605,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         row.commit(); have.add(k); res[counter]++;
       }
     };
+    res.refAdded = addRefSheet(wb, { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8710A" } }, alignment: { horizontal: "center", vertical: "middle", wrapText: true } });
     append("條款庫", (clauses || []).map(c => Core.SCHEMA.條款庫.map(k => c[k] || "")), 1, "clauses");
     append("提案區", proposals || [], 1, "proposals");
     append("回覆紀錄", logs || [], 1, "logs");
@@ -1371,7 +1614,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   const Engine = { str, detectColumns, rowsToItems, ingestExcel, writeExcelSame, ingestDocx, writeDocxSame, writeClarification, resolveLang, replyText, isMostlyCJK,
-    effectiveClause, clauseBlock, EMPTY_MASTER, buildNewMaster, pastReplies, draftUserText, reviseUserText, parseJSON, geminiBody, bottomLeak, mergeIntoMaster,
+    effectiveClause, clauseBlock, EMPTY_MASTER, buildNewMaster, suggestText, readRefSheet, REF_SHEET, pastReplies, draftUserText, reviseUserText, parseJSON, geminiBody, bottomLeak, mergeIntoMaster,
     DRAFT_SYSTEM, REVISE_SYSTEM, SPLIT_SYSTEM, STANCES, BOTTOM };
   if (typeof module !== "undefined" && module.exports) module.exports = Engine; else root.Engine = Engine;
 })(typeof window !== "undefined" ? window : globalThis);
@@ -1386,8 +1629,10 @@ const S = {
   settings: Object.assign({ user: "", key: "", model: "gemini-2.5-flash", gap: 6, bottom: true, lang: "auto" }, LS.get("settings", {})),
   master: LS.get("master", null), masterName: LS.get("masterName", ""), masterAt: LS.get("masterAt", ""), handle: null,
   pending: LS.get("pending", []), logs: LS.get("logs", []), dict: LS.get("dict", []), localClauses: LS.get("localClauses", []),
-  sess: null,
+  sess: null, refOverride: LS.get("refOverride", null),
 };
+const refs = () => Ref.merge(Ref.STANDARDS, S.refOverride || []);
+const refById = id => refs().find(r => r.id === id);
 function save() { LS.set("localClauses", S.localClauses); LS.set("pending", S.pending); LS.set("logs", S.logs); LS.set("dict", S.dict); LS.set("settings", S.settings); renderBadge(); }
 function toast(m, ms) { const t = $("#toast"); t.textContent = m; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", ms || 2800); }
 const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
@@ -1434,6 +1679,7 @@ function renderIntro() {
 }
 async function readMasterBuf(buf, name) {
   const m = Core.parseMaster(XLSX, buf);
+  const ro = Engine.readRefSheet(XLSX, buf); S.refOverride = ro && ro.length ? ro : null; LS.set("refOverride", S.refOverride);
   if (m.errors.length) throw new Error(m.errors.join("；") + "（請確認是商務條款底線 Master File）");
   return m;
 }
@@ -1517,7 +1763,7 @@ $("#fileIn").onchange = e => { if (e.target.files[0]) ingest(e.target.files[0]);
 document.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) ingest(f); });
 
 function newSession(file, buf) {
-  S.sess = { file, buf, name: file.name, ing: null, items: [], terms: [], images: null, lang: S.settings.lang, project: "", vendor: "", exported: false };
+  S.sess = { file, buf, name: file.name, ing: null, items: [], terms: [], images: null, lang: S.settings.lang, project: "", vendor: "", exported: false, docKind: S.settings.docKind || "" };
 }
 async function ingest(file) {
   if (S.sess && S.sess.items.some(i => i.zh || i.en) && !S.sess.exported && !confirm("目前這份還沒產出完稿，確定換下一份？")) return;
@@ -1584,6 +1830,7 @@ function renderSession(msg) {
     <div class="row" style="margin-top:10px">
       <label class="f">專案名稱（會遮蔽）<input type="text" id="sesProject" value="${esc(s.project)}"></label>
       <label class="f">廠商名稱（會遮蔽）<input type="text" id="sesVendor" value="${esc(s.vendor)}"></label>
+      <label class="f">採購類型（選用制式範本）<select id="sesKind">${[["", "自動（工程＋財物都參考）"], ["goods", "設備／材料採購（財物）"], ["works", "工程發包（工程）"]].map(([v, t]) => `<option value="${v}" ${s.docKind === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
       <label class="f">完稿語言<select id="sesLang">${[["auto", "自動"], ["zh", "中文"], ["en", "英文"], ["both", "中英並列"]].map(([v, t]) => `<option value="${v}" ${s.lang === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
       <span style="flex:1"></span>
       ${s.items.length ? `<span class="muted">辨識出 <b>${s.items.length}</b> 項異議</span>` : s.needSplit || s.images ? `<span class="muted">需由 AI 拆出異議項目</span>` : ""}
@@ -1592,6 +1839,7 @@ function renderSession(msg) {
   $("#sesProject").onchange = e => s.project = e.target.value.trim();
   $("#sesVendor").onchange = e => s.vendor = e.target.value.trim();
   $("#sesLang").onchange = e => { s.lang = e.target.value; };
+  $("#sesKind").onchange = e => { s.docKind = e.target.value; S.settings.docKind = s.docKind; save(); };
   $("#btnDraft").onclick = () => draftAll();
   renderItems();
 }
@@ -1671,9 +1919,10 @@ async function draftAll() {
       if (S.settings.gap) await sleep(S.settings.gap * 1000);
     }
     const mv = masterView(), chunks = [];
-    s.items.forEach(it => { it.cands = Core.matchClauses(it.text + " " + it.ref, mv.clauses.filter(c => c.狀態 !== "停用"), 2); it.hint = it.cands.map(c => c.id).join("/"); });
+    s.items.forEach(it => { it.cands = Core.matchClauses(it.text + " " + it.ref, mv.clauses.filter(c => c.狀態 !== "停用"), 2); it.hint = it.cands.map(c => c.id).join("/"); it.topics = Ref.match(it.text + " " + it.ref, refs(), 2).map(r => r.id); });
     for (let i = 0; i < s.items.length; i += 10) chunks.push(s.items.slice(i, i + 10));
-    const build = ch => Engine.draftUserText(ch, ch.flatMap(it => it.cands.map(c => c.id)), mv, S.pending, S.settings.bottom);
+    const chRefs = ch => [...new Set(ch.flatMap(it => it.topics))].map(refById).filter(Boolean);
+    const build = ch => Engine.draftUserText(ch, ch.flatMap(it => it.cands.map(c => c.id)), mv, S.pending, S.settings.bottom, chRefs(ch), s.docKind);
     const all = chunks.map(build).join("\n\n=====\n\n");
     sessTermsFor(all + "\n" + s.name);
     const ok = await confirmSend("送出確認：AI 草擬回覆", () => chunks.map(build).join("\n\n=====\n\n"), s.confirmedOnce || !s.images ? null : s.images);
@@ -1701,6 +1950,8 @@ function applyAI(it, x) {
   it.stance = Engine.STANCES.includes(x.stance) ? x.stance : (x.stance || "");
   it.bottom = Engine.str(x.bottom);
   it.zh = unmask(x.zh); it.en = unmask(x.en); it.reason = unmask(x.reason);
+  if (x.topicId && refById(Engine.str(x.topicId))) it.topicId = Engine.str(x.topicId);
+  it.sugZh = it.stance === "有條件接受" ? unmask(x.sugZh) : ""; it.sugEn = it.stance === "有條件接受" ? unmask(x.sugEn) : "";
   const c = it.clauseId ? Engine.effectiveClause(masterView(), S.pending, it.clauseId) : null;
   it.leak = Engine.bottomLeak(it, c);
   it.left = Deid.leftTokens(it.zh + it.en);
@@ -1723,16 +1974,19 @@ function renderItems() {
     return `<div class="item ${it.agreed ? "done" : ""}" data-i="${i}">
       <div class="item-h"><b>項次 ${esc(it.no)}</b>${it.ref ? `<span class="muted">條次 ${esc(it.ref)}</span>` : ""}
         <select data-f="clauseId" style="max-width:240px"><option value="">${it.clauseName ? "新：" + esc(it.clauseName) : "（未對應條款）"}</option>${clauses.map(c => `<option value="${esc(c.條款ID)}" ${c.條款ID === it.clauseId ? "selected" : ""}>${esc(c.條款ID)} ${esc(c.條款名稱)}</option>`).join("")}</select>
-        ${chipStance(it)}${chipBottom(it)}
+        ${chipStance(it)}${chipBottom(it)}${(() => { const t = refById(it.topicId || (it.topics || [])[0]); return t ? `<span class="chip o" title="制式條款主題">制式：${esc(t.id)} ${esc(t.name)}</span>` : ""; })()}
         ${it.leak && it.leak.length ? `<span class="chip bad" title="回覆出現了內部底線的數字，但廠商原文沒有">⚠ 可能洩漏底線：${esc(it.leak.join("、"))}</span>` : ""}
         ${it.left && it.left.length ? `<span class="chip bad">⚠ 未還原代號 ${esc(it.left.join(" "))}</span>` : ""}
         <span style="flex:1"></span>${it.agreed ? `<span class="chip ok">✔ 已同意</span>` : ""}</div>
       <div class="item-b">
         <div><div class="lbl">廠商異議</div><div class="vend">${esc(it.text)}</div>
-          ${it.reason ? `<div class="reason">AI 判斷：${esc(it.reason)}</div>` : ""}${it.error ? `<div class="note bad">${esc(it.error)}</div>` : ""}</div>
+          ${it.reason ? `<div class="reason">AI 判斷：${esc(it.reason)}</div>` : ""}${it.error ? `<div class="note bad">${esc(it.error)}</div>` : ""}
+          ${(() => { const ids = [...new Set([it.topicId].concat(it.topics || []).filter(Boolean))]; return ids.length ? `<details style="margin-top:8px"><summary class="muted">制式條款參考（內部）</summary><div class="vend" style="font-size:12.5px;margin-top:6px">${ids.map(refById).filter(Boolean).map(t => esc(Ref.block(t, S.sess.docKind))).join("\n\n")}</div></details>` : ""; })()}</div>
         <div>${has ? `
           <div class="lbl">我方回覆（中）</div><textarea data-f="zh" rows="3">${esc(it.zh)}</textarea>
           <div class="lbl">Our Response (EN)</div><textarea data-f="en" rows="3">${esc(it.en)}</textarea>
+          ${it.sugZh || it.sugEn || it.stance === "有條件接受" ? `<div class="lbl">建議修正條文（中）<span class="muted">— 比照制式條款寫法，會放進完稿的另一欄；清空則不放</span></div><textarea data-f="sugZh" rows="3">${esc(it.sugZh || "")}</textarea>
+          <div class="lbl">Proposed Clause (EN)</div><textarea data-f="sugEn" rows="3">${esc(it.sugEn || "")}</textarea>` : ""}
           <div class="row" style="margin-top:8px">
             <button class="b ${it.agreed ? "" : "ok"}" data-a="agree">${it.agreed ? "取消同意" : "✔ 同意"}</button>
             <input type="text" data-f="fb" placeholder="給 AI 的意見，例如：可同意 60 天，但需提供保證／語氣軟一點／這類一律拒絕" style="flex:1;min-width:220px" value="${esc(it.fb || "")}">
@@ -1753,7 +2007,7 @@ function renderBar() {
   $("#barTxt").textContent = `已同意 ${a} / ${s.items.length} 項`;
   $("#barProg").style.width = (s.items.length ? a / s.items.length * 100 : 0) + "%";
 }
-$("#items").addEventListener("input", e => { const box = e.target.closest(".item"); if (!box) return; const it = S.sess.items[+box.dataset.i], f = e.target.dataset.f; if (["zh", "en", "fb"].includes(f)) { it[f] = e.target.value; if (f !== "fb" && it.agreed) { it.agreed = false; renderItems(); } } });
+$("#items").addEventListener("input", e => { const box = e.target.closest(".item"); if (!box) return; const it = S.sess.items[+box.dataset.i], f = e.target.dataset.f; if (["zh", "en", "fb", "sugZh", "sugEn"].includes(f)) { it[f] = e.target.value; if (f !== "fb" && it.agreed) { it.agreed = false; renderItems(); } } });
 $("#items").addEventListener("change", e => { const box = e.target.closest(".item"); if (!box) return; const it = S.sess.items[+box.dataset.i]; if (e.target.dataset.f === "clauseId") { it.clauseId = e.target.value; it.leak = Engine.bottomLeak(it, it.clauseId ? Engine.effectiveClause(masterView(), S.pending, it.clauseId) : null); renderItems(); } });
 $("#items").addEventListener("click", async e => {
   const b = e.target.closest("[data-a]"); if (!b) return;
@@ -1765,18 +2019,20 @@ $("#items").addEventListener("click", async e => {
 });
 async function revise(it) {
   try {
-    const raw = Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom);
+    const itRefs = [...new Set([it.topicId].concat(it.topics || []).filter(Boolean))].map(refById).filter(Boolean);
+    const raw = Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom, itRefs, S.sess.docKind);
     const added = sessTermsFor(raw);
     const m = sessMask(raw);
-    if (added.length || m.residual.length || m.leaked.length) { if (!(await confirmSend("送出確認：意見中有新的機密詞", () => Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom)))) { renderItems(); return; } }
-    const j = await gemini(Engine.REVISE_SYSTEM, [{ text: sessMask(Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom)).text + Deid.PROMPT_NOTE }], 0.3);
+    if (added.length || m.residual.length || m.leaked.length) { if (!(await confirmSend("送出確認：意見中有新的機密詞", () => Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom, itRefs, S.sess.docKind)))) { renderItems(); return; } }
+    const j = await gemini(Engine.REVISE_SYSTEM, [{ text: sessMask(Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom, itRefs, S.sess.docKind)).text + Deid.PROMPT_NOTE }], 0.3);
     applyAI(it, Object.assign({ clauseId: it.clauseId }, j));
     it.agreed = false; it.history = (it.history || []).concat([{ fb: it.fb }]);
     const r = j.rule && j.rule.field && j.rule.value ? j.rule : null;
-    it.rule = r && Engine.BOTTOM.concat(["慣用回覆_中", "慣用回覆_EN"]).includes(r.field) ? { clauseId: Engine.str(r.clauseId) || it.clauseId, clauseName: unmask(r.clauseName) || it.clauseName || "", category: unmask(r.category), keywords: unmask(r.keywords), field: r.field, value: unmask(r.value), summary: unmask(r.summary) } : null;
+    const tp = refById(Engine.str(r && r.topicId)) || refById(it.topicId);
+    it.rule = r && Engine.BOTTOM.concat(["慣用回覆_中", "慣用回覆_EN"]).includes(r.field) ? { clauseId: Engine.str(r.clauseId) || it.clauseId, topicId: tp ? tp.id : "", clauseName: unmask(r.clauseName) || (tp && tp.name) || it.clauseName || "", category: unmask(r.category), keywords: unmask(r.keywords), field: r.field, value: unmask(r.value), summary: unmask(r.summary) } : null;
     if (it.rule && !masterView().clauses.some(c => c.條款ID === it.rule.clauseId)) it.rule.clauseId = it.clauseId || "";
     if (it.rule && !it.rule.clauseId) {
-      const same = masterView().clauses.find(c => c.條款名稱 && c.條款名稱 === it.rule.clauseName);
+      const same = masterView().clauses.find(c => c.條款名稱 && (c.條款名稱 === it.rule.clauseName || (it.rule.topicId && String(c.備註).includes(`制式主題 ${it.rule.topicId} `))));
       if (same) it.rule.clauseId = same.條款ID;
       else if (!it.rule.clauseName) it.rule = null;
     }
@@ -1793,7 +2049,8 @@ function learnRule(it) {
     if (!cl) {
       const d = new Date(), id = `N-${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${(S.settings.user || "X").slice(0, 3)}-${S.localClauses.length + 1}`;
       cl = Object.fromEntries(Core.SCHEMA.條款庫.map(k => [k, ""]));
-      Object.assign(cl, { 條款ID: id, 類別: r.category || "其他", 條款名稱: r.clauseName, 關鍵字: r.keywords || r.clauseName, 狀態: "待核", 版本: "0.1", 核准人: "", 下次Review日: "", 備註: `由 ${S.settings.user || "使用者"} 於 ${Core.today()} 的回饋歸納` });
+      const tp = refById(r.topicId);
+      Object.assign(cl, { 條款ID: id, 類別: tp ? tp.group : (r.category || "其他"), 條款名稱: r.clauseName || (tp && tp.name), 關鍵字: r.keywords || (tp && tp.keywords) || r.clauseName, 狀態: "待核", 版本: "0.1", 核准人: "", 下次Review日: "", 備註: `由 ${S.settings.user || "使用者"} 於 ${Core.today()} 的回饋歸納${tp ? `；制式主題 ${tp.id} ${tp.name}` : ""}` });
       S.localClauses.push(cl);
     }
     append(cl, r.field, r.value);
@@ -1856,6 +2113,18 @@ $("#dlgSet").addEventListener("change", e => {
 $("#sList").onclick = async () => { $("#sMsg").textContent = "讀取中…"; try { const l = await Core.listModels({ key: S.settings.key }); $("#mList").innerHTML = l.map(m => `<option value="${esc(m)}">`).join(""); $("#sMsg").textContent = `可用 ${l.length} 個模型，免費層建議 flash 系列。`; } catch (e) { $("#sMsg").textContent = "失敗：" + e.message; } };
 $("#sTest").onclick = async () => { $("#sMsg").textContent = "測試中…"; try { const t = await Core.callGemini({ key: S.settings.key, model: S.settings.model, body: { contents: [{ role: "user", parts: [{ text: "只回覆 OK" }] }] } }); $("#sMsg").textContent = "連線成功：" + t.trim().slice(0, 20); } catch (e) { $("#sMsg").textContent = "失敗：" + e.message; } };
 $("#sWipe").onclick = () => { if (confirm("清除本機設定、API Key 與尚未存回的規則／紀錄？")) { try { Object.keys(localStorage).filter(k => k.startsWith("dr.")).forEach(k => localStorage.removeItem(k)); indexedDB.deleteDatabase("dr"); } catch (e) { } location.reload(); } };
+
+// ───────── 制式條款參考 ─────────
+function renderRefs() {
+  const g = $("#refGroup").value, q = $("#refQ").value.trim().toLowerCase();
+  const list = refs().filter(r => (!g || r.group === g) && (!q || (r.name + r.keywords + r.red + r.silver + r.pccW + r.pccG + r.ctci).toLowerCase().includes(q)));
+  const cell = v => esc(v || "—").replace(/【待查證】/g, '<span class="chip warn">待查證</span> ');
+  $("#refInfo").textContent = `${refs().length} 個主題｜${S.refOverride ? "已套用規則檔的修正" : "內建版本 " + Ref.VERSION}`;
+  $("#refTable").innerHTML = `<table class="t"><tr><th>主題</th><th>工程會工程範本</th><th>工程會財物範本</th><th>FIDIC 紅皮書</th><th>FIDIC 銀皮書</th><th>中鼎 PO 慣例</th></tr>${list.map(r => `<tr><td><b>${esc(r.id)} ${esc(r.name)}</b><br><span class="muted">${esc(r.group)}</span></td><td>${cell(r.pccW)}</td><td>${cell(r.pccG)}</td><td>${cell(r.red)}</td><td>${cell(r.silver)}</td><td>${cell(r.ctci)}</td></tr>`).join("")}</table>
+    <details style="margin-top:10px"><summary class="muted">資料來源</summary><ul class="muted">${[...new Set(list.flatMap(r => r.src || []))].map(u => `<li>${/^https?:/.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>` : esc(u)}</li>`).join("")}</ul></details>`;
+}
+$("#btnRefs").onclick = () => { $("#refGroup").innerHTML = `<option value="">全部群組</option>` + Ref.GROUPS.map(g => `<option>${g}</option>`).join(""); renderRefs(); $("#dlgRefs").showModal(); };
+$("#refGroup").onchange = renderRefs; $("#refQ").oninput = renderRefs;
 
 // ───────── 每月 Review ─────────
 $("#btnReview").onclick = () => { const d = new Date(); if (!$("#rMonth").value) $("#rMonth").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; $("#dlgRev").showModal(); };

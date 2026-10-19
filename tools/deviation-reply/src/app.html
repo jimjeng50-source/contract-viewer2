@@ -71,6 +71,7 @@ details summary{cursor:pointer}
   <div id="ruleBadge">尚未開啟規則檔</div>
   <button class="b" id="btnOpenRules">開啟既有規則檔</button>
   <button class="b" id="btnSaveRules" disabled>建立規則檔</button>
+  <button class="b" id="btnRefs">制式條款</button>
   <button class="b" id="btnReview">每月 Review</button>
   <button class="b" id="btnSettings">設定</button>
 </header>
@@ -141,6 +142,16 @@ details summary{cursor:pointer}
   </div>
 </dialog>
 
+<!-- 制式條款參考 -->
+<dialog id="dlgRefs">
+  <div class="dh"><b>制式條款參考</b><span class="muted" id="refInfo"></span><span style="flex:1"></span><button class="b" onclick="this.closest('dialog').close()">關閉</button></div>
+  <div class="db">
+    <div class="note">AI 擬稿與判斷時參考的制式條款，依主題分組。<b>只供內部判斷，回覆廠商時不會提及出處。</b>FIDIC 欄為摘要（原文受著作權保護）；標「待查證」者未能核對該版本原文。規則檔的「制式條款參考」工作表可修改或貼上正式原文，工具會以規則檔為準。</div>
+    <div class="row" style="margin:8px 0"><select id="refGroup"><option value="">全部群組</option></select><input type="text" id="refQ" placeholder="搜尋主題或關鍵字"></div>
+    <div id="refTable"></div>
+  </div>
+</dialog>
+
 <!-- 每月 Review -->
 <dialog id="dlgRev">
   <div class="dh"><b>每月 Review（維護人）</b><span style="flex:1"></span><button class="b" onclick="this.closest('dialog').close()">關閉</button></div>
@@ -165,6 +176,7 @@ details summary{cursor:pointer}
 <script>/*__PDFJS_WORKER__*/</script>
 <script>const CMAPS = /*__CMAPS__*/;</script>
 <script>/*__DEID__*/</script>
+<script>/*__REF__*/</script>
 <script>/*__CORE__*/</script>
 <script>/*__ENGINE__*/</script>
 <script>
@@ -177,8 +189,10 @@ const S = {
   settings: Object.assign({ user: "", key: "", model: "gemini-2.5-flash", gap: 6, bottom: true, lang: "auto" }, LS.get("settings", {})),
   master: LS.get("master", null), masterName: LS.get("masterName", ""), masterAt: LS.get("masterAt", ""), handle: null,
   pending: LS.get("pending", []), logs: LS.get("logs", []), dict: LS.get("dict", []), localClauses: LS.get("localClauses", []),
-  sess: null,
+  sess: null, refOverride: LS.get("refOverride", null),
 };
+const refs = () => Ref.merge(Ref.STANDARDS, S.refOverride || []);
+const refById = id => refs().find(r => r.id === id);
 function save() { LS.set("localClauses", S.localClauses); LS.set("pending", S.pending); LS.set("logs", S.logs); LS.set("dict", S.dict); LS.set("settings", S.settings); renderBadge(); }
 function toast(m, ms) { const t = $("#toast"); t.textContent = m; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", ms || 2800); }
 const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
@@ -225,6 +239,7 @@ function renderIntro() {
 }
 async function readMasterBuf(buf, name) {
   const m = Core.parseMaster(XLSX, buf);
+  const ro = Engine.readRefSheet(XLSX, buf); S.refOverride = ro && ro.length ? ro : null; LS.set("refOverride", S.refOverride);
   if (m.errors.length) throw new Error(m.errors.join("；") + "（請確認是商務條款底線 Master File）");
   return m;
 }
@@ -308,7 +323,7 @@ $("#fileIn").onchange = e => { if (e.target.files[0]) ingest(e.target.files[0]);
 document.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) ingest(f); });
 
 function newSession(file, buf) {
-  S.sess = { file, buf, name: file.name, ing: null, items: [], terms: [], images: null, lang: S.settings.lang, project: "", vendor: "", exported: false };
+  S.sess = { file, buf, name: file.name, ing: null, items: [], terms: [], images: null, lang: S.settings.lang, project: "", vendor: "", exported: false, docKind: S.settings.docKind || "" };
 }
 async function ingest(file) {
   if (S.sess && S.sess.items.some(i => i.zh || i.en) && !S.sess.exported && !confirm("目前這份還沒產出完稿，確定換下一份？")) return;
@@ -375,6 +390,7 @@ function renderSession(msg) {
     <div class="row" style="margin-top:10px">
       <label class="f">專案名稱（會遮蔽）<input type="text" id="sesProject" value="${esc(s.project)}"></label>
       <label class="f">廠商名稱（會遮蔽）<input type="text" id="sesVendor" value="${esc(s.vendor)}"></label>
+      <label class="f">採購類型（選用制式範本）<select id="sesKind">${[["", "自動（工程＋財物都參考）"], ["goods", "設備／材料採購（財物）"], ["works", "工程發包（工程）"]].map(([v, t]) => `<option value="${v}" ${s.docKind === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
       <label class="f">完稿語言<select id="sesLang">${[["auto", "自動"], ["zh", "中文"], ["en", "英文"], ["both", "中英並列"]].map(([v, t]) => `<option value="${v}" ${s.lang === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
       <span style="flex:1"></span>
       ${s.items.length ? `<span class="muted">辨識出 <b>${s.items.length}</b> 項異議</span>` : s.needSplit || s.images ? `<span class="muted">需由 AI 拆出異議項目</span>` : ""}
@@ -383,6 +399,7 @@ function renderSession(msg) {
   $("#sesProject").onchange = e => s.project = e.target.value.trim();
   $("#sesVendor").onchange = e => s.vendor = e.target.value.trim();
   $("#sesLang").onchange = e => { s.lang = e.target.value; };
+  $("#sesKind").onchange = e => { s.docKind = e.target.value; S.settings.docKind = s.docKind; save(); };
   $("#btnDraft").onclick = () => draftAll();
   renderItems();
 }
@@ -462,9 +479,10 @@ async function draftAll() {
       if (S.settings.gap) await sleep(S.settings.gap * 1000);
     }
     const mv = masterView(), chunks = [];
-    s.items.forEach(it => { it.cands = Core.matchClauses(it.text + " " + it.ref, mv.clauses.filter(c => c.狀態 !== "停用"), 2); it.hint = it.cands.map(c => c.id).join("/"); });
+    s.items.forEach(it => { it.cands = Core.matchClauses(it.text + " " + it.ref, mv.clauses.filter(c => c.狀態 !== "停用"), 2); it.hint = it.cands.map(c => c.id).join("/"); it.topics = Ref.match(it.text + " " + it.ref, refs(), 2).map(r => r.id); });
     for (let i = 0; i < s.items.length; i += 10) chunks.push(s.items.slice(i, i + 10));
-    const build = ch => Engine.draftUserText(ch, ch.flatMap(it => it.cands.map(c => c.id)), mv, S.pending, S.settings.bottom);
+    const chRefs = ch => [...new Set(ch.flatMap(it => it.topics))].map(refById).filter(Boolean);
+    const build = ch => Engine.draftUserText(ch, ch.flatMap(it => it.cands.map(c => c.id)), mv, S.pending, S.settings.bottom, chRefs(ch), s.docKind);
     const all = chunks.map(build).join("\n\n=====\n\n");
     sessTermsFor(all + "\n" + s.name);
     const ok = await confirmSend("送出確認：AI 草擬回覆", () => chunks.map(build).join("\n\n=====\n\n"), s.confirmedOnce || !s.images ? null : s.images);
@@ -492,6 +510,8 @@ function applyAI(it, x) {
   it.stance = Engine.STANCES.includes(x.stance) ? x.stance : (x.stance || "");
   it.bottom = Engine.str(x.bottom);
   it.zh = unmask(x.zh); it.en = unmask(x.en); it.reason = unmask(x.reason);
+  if (x.topicId && refById(Engine.str(x.topicId))) it.topicId = Engine.str(x.topicId);
+  it.sugZh = it.stance === "有條件接受" ? unmask(x.sugZh) : ""; it.sugEn = it.stance === "有條件接受" ? unmask(x.sugEn) : "";
   const c = it.clauseId ? Engine.effectiveClause(masterView(), S.pending, it.clauseId) : null;
   it.leak = Engine.bottomLeak(it, c);
   it.left = Deid.leftTokens(it.zh + it.en);
@@ -514,16 +534,19 @@ function renderItems() {
     return `<div class="item ${it.agreed ? "done" : ""}" data-i="${i}">
       <div class="item-h"><b>項次 ${esc(it.no)}</b>${it.ref ? `<span class="muted">條次 ${esc(it.ref)}</span>` : ""}
         <select data-f="clauseId" style="max-width:240px"><option value="">${it.clauseName ? "新：" + esc(it.clauseName) : "（未對應條款）"}</option>${clauses.map(c => `<option value="${esc(c.條款ID)}" ${c.條款ID === it.clauseId ? "selected" : ""}>${esc(c.條款ID)} ${esc(c.條款名稱)}</option>`).join("")}</select>
-        ${chipStance(it)}${chipBottom(it)}
+        ${chipStance(it)}${chipBottom(it)}${(() => { const t = refById(it.topicId || (it.topics || [])[0]); return t ? `<span class="chip o" title="制式條款主題">制式：${esc(t.id)} ${esc(t.name)}</span>` : ""; })()}
         ${it.leak && it.leak.length ? `<span class="chip bad" title="回覆出現了內部底線的數字，但廠商原文沒有">⚠ 可能洩漏底線：${esc(it.leak.join("、"))}</span>` : ""}
         ${it.left && it.left.length ? `<span class="chip bad">⚠ 未還原代號 ${esc(it.left.join(" "))}</span>` : ""}
         <span style="flex:1"></span>${it.agreed ? `<span class="chip ok">✔ 已同意</span>` : ""}</div>
       <div class="item-b">
         <div><div class="lbl">廠商異議</div><div class="vend">${esc(it.text)}</div>
-          ${it.reason ? `<div class="reason">AI 判斷：${esc(it.reason)}</div>` : ""}${it.error ? `<div class="note bad">${esc(it.error)}</div>` : ""}</div>
+          ${it.reason ? `<div class="reason">AI 判斷：${esc(it.reason)}</div>` : ""}${it.error ? `<div class="note bad">${esc(it.error)}</div>` : ""}
+          ${(() => { const ids = [...new Set([it.topicId].concat(it.topics || []).filter(Boolean))]; return ids.length ? `<details style="margin-top:8px"><summary class="muted">制式條款參考（內部）</summary><div class="vend" style="font-size:12.5px;margin-top:6px">${ids.map(refById).filter(Boolean).map(t => esc(Ref.block(t, S.sess.docKind))).join("\n\n")}</div></details>` : ""; })()}</div>
         <div>${has ? `
           <div class="lbl">我方回覆（中）</div><textarea data-f="zh" rows="3">${esc(it.zh)}</textarea>
           <div class="lbl">Our Response (EN)</div><textarea data-f="en" rows="3">${esc(it.en)}</textarea>
+          ${it.sugZh || it.sugEn || it.stance === "有條件接受" ? `<div class="lbl">建議修正條文（中）<span class="muted">— 比照制式條款寫法，會放進完稿的另一欄；清空則不放</span></div><textarea data-f="sugZh" rows="3">${esc(it.sugZh || "")}</textarea>
+          <div class="lbl">Proposed Clause (EN)</div><textarea data-f="sugEn" rows="3">${esc(it.sugEn || "")}</textarea>` : ""}
           <div class="row" style="margin-top:8px">
             <button class="b ${it.agreed ? "" : "ok"}" data-a="agree">${it.agreed ? "取消同意" : "✔ 同意"}</button>
             <input type="text" data-f="fb" placeholder="給 AI 的意見，例如：可同意 60 天，但需提供保證／語氣軟一點／這類一律拒絕" style="flex:1;min-width:220px" value="${esc(it.fb || "")}">
@@ -544,7 +567,7 @@ function renderBar() {
   $("#barTxt").textContent = `已同意 ${a} / ${s.items.length} 項`;
   $("#barProg").style.width = (s.items.length ? a / s.items.length * 100 : 0) + "%";
 }
-$("#items").addEventListener("input", e => { const box = e.target.closest(".item"); if (!box) return; const it = S.sess.items[+box.dataset.i], f = e.target.dataset.f; if (["zh", "en", "fb"].includes(f)) { it[f] = e.target.value; if (f !== "fb" && it.agreed) { it.agreed = false; renderItems(); } } });
+$("#items").addEventListener("input", e => { const box = e.target.closest(".item"); if (!box) return; const it = S.sess.items[+box.dataset.i], f = e.target.dataset.f; if (["zh", "en", "fb", "sugZh", "sugEn"].includes(f)) { it[f] = e.target.value; if (f !== "fb" && it.agreed) { it.agreed = false; renderItems(); } } });
 $("#items").addEventListener("change", e => { const box = e.target.closest(".item"); if (!box) return; const it = S.sess.items[+box.dataset.i]; if (e.target.dataset.f === "clauseId") { it.clauseId = e.target.value; it.leak = Engine.bottomLeak(it, it.clauseId ? Engine.effectiveClause(masterView(), S.pending, it.clauseId) : null); renderItems(); } });
 $("#items").addEventListener("click", async e => {
   const b = e.target.closest("[data-a]"); if (!b) return;
@@ -556,18 +579,20 @@ $("#items").addEventListener("click", async e => {
 });
 async function revise(it) {
   try {
-    const raw = Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom);
+    const itRefs = [...new Set([it.topicId].concat(it.topics || []).filter(Boolean))].map(refById).filter(Boolean);
+    const raw = Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom, itRefs, S.sess.docKind);
     const added = sessTermsFor(raw);
     const m = sessMask(raw);
-    if (added.length || m.residual.length || m.leaked.length) { if (!(await confirmSend("送出確認：意見中有新的機密詞", () => Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom)))) { renderItems(); return; } }
-    const j = await gemini(Engine.REVISE_SYSTEM, [{ text: sessMask(Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom)).text + Deid.PROMPT_NOTE }], 0.3);
+    if (added.length || m.residual.length || m.leaked.length) { if (!(await confirmSend("送出確認：意見中有新的機密詞", () => Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom, itRefs, S.sess.docKind)))) { renderItems(); return; } }
+    const j = await gemini(Engine.REVISE_SYSTEM, [{ text: sessMask(Engine.reviseUserText(it, it.fb, masterView(), S.pending, S.settings.bottom, itRefs, S.sess.docKind)).text + Deid.PROMPT_NOTE }], 0.3);
     applyAI(it, Object.assign({ clauseId: it.clauseId }, j));
     it.agreed = false; it.history = (it.history || []).concat([{ fb: it.fb }]);
     const r = j.rule && j.rule.field && j.rule.value ? j.rule : null;
-    it.rule = r && Engine.BOTTOM.concat(["慣用回覆_中", "慣用回覆_EN"]).includes(r.field) ? { clauseId: Engine.str(r.clauseId) || it.clauseId, clauseName: unmask(r.clauseName) || it.clauseName || "", category: unmask(r.category), keywords: unmask(r.keywords), field: r.field, value: unmask(r.value), summary: unmask(r.summary) } : null;
+    const tp = refById(Engine.str(r && r.topicId)) || refById(it.topicId);
+    it.rule = r && Engine.BOTTOM.concat(["慣用回覆_中", "慣用回覆_EN"]).includes(r.field) ? { clauseId: Engine.str(r.clauseId) || it.clauseId, topicId: tp ? tp.id : "", clauseName: unmask(r.clauseName) || (tp && tp.name) || it.clauseName || "", category: unmask(r.category), keywords: unmask(r.keywords), field: r.field, value: unmask(r.value), summary: unmask(r.summary) } : null;
     if (it.rule && !masterView().clauses.some(c => c.條款ID === it.rule.clauseId)) it.rule.clauseId = it.clauseId || "";
     if (it.rule && !it.rule.clauseId) {
-      const same = masterView().clauses.find(c => c.條款名稱 && c.條款名稱 === it.rule.clauseName);
+      const same = masterView().clauses.find(c => c.條款名稱 && (c.條款名稱 === it.rule.clauseName || (it.rule.topicId && String(c.備註).includes(`制式主題 ${it.rule.topicId} `))));
       if (same) it.rule.clauseId = same.條款ID;
       else if (!it.rule.clauseName) it.rule = null;
     }
@@ -584,7 +609,8 @@ function learnRule(it) {
     if (!cl) {
       const d = new Date(), id = `N-${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${(S.settings.user || "X").slice(0, 3)}-${S.localClauses.length + 1}`;
       cl = Object.fromEntries(Core.SCHEMA.條款庫.map(k => [k, ""]));
-      Object.assign(cl, { 條款ID: id, 類別: r.category || "其他", 條款名稱: r.clauseName, 關鍵字: r.keywords || r.clauseName, 狀態: "待核", 版本: "0.1", 核准人: "", 下次Review日: "", 備註: `由 ${S.settings.user || "使用者"} 於 ${Core.today()} 的回饋歸納` });
+      const tp = refById(r.topicId);
+      Object.assign(cl, { 條款ID: id, 類別: tp ? tp.group : (r.category || "其他"), 條款名稱: r.clauseName || (tp && tp.name), 關鍵字: r.keywords || (tp && tp.keywords) || r.clauseName, 狀態: "待核", 版本: "0.1", 核准人: "", 下次Review日: "", 備註: `由 ${S.settings.user || "使用者"} 於 ${Core.today()} 的回饋歸納${tp ? `；制式主題 ${tp.id} ${tp.name}` : ""}` });
       S.localClauses.push(cl);
     }
     append(cl, r.field, r.value);
@@ -647,6 +673,18 @@ $("#dlgSet").addEventListener("change", e => {
 $("#sList").onclick = async () => { $("#sMsg").textContent = "讀取中…"; try { const l = await Core.listModels({ key: S.settings.key }); $("#mList").innerHTML = l.map(m => `<option value="${esc(m)}">`).join(""); $("#sMsg").textContent = `可用 ${l.length} 個模型，免費層建議 flash 系列。`; } catch (e) { $("#sMsg").textContent = "失敗：" + e.message; } };
 $("#sTest").onclick = async () => { $("#sMsg").textContent = "測試中…"; try { const t = await Core.callGemini({ key: S.settings.key, model: S.settings.model, body: { contents: [{ role: "user", parts: [{ text: "只回覆 OK" }] }] } }); $("#sMsg").textContent = "連線成功：" + t.trim().slice(0, 20); } catch (e) { $("#sMsg").textContent = "失敗：" + e.message; } };
 $("#sWipe").onclick = () => { if (confirm("清除本機設定、API Key 與尚未存回的規則／紀錄？")) { try { Object.keys(localStorage).filter(k => k.startsWith("dr.")).forEach(k => localStorage.removeItem(k)); indexedDB.deleteDatabase("dr"); } catch (e) { } location.reload(); } };
+
+// ───────── 制式條款參考 ─────────
+function renderRefs() {
+  const g = $("#refGroup").value, q = $("#refQ").value.trim().toLowerCase();
+  const list = refs().filter(r => (!g || r.group === g) && (!q || (r.name + r.keywords + r.red + r.silver + r.pccW + r.pccG + r.ctci).toLowerCase().includes(q)));
+  const cell = v => esc(v || "—").replace(/【待查證】/g, '<span class="chip warn">待查證</span> ');
+  $("#refInfo").textContent = `${refs().length} 個主題｜${S.refOverride ? "已套用規則檔的修正" : "內建版本 " + Ref.VERSION}`;
+  $("#refTable").innerHTML = `<table class="t"><tr><th>主題</th><th>工程會工程範本</th><th>工程會財物範本</th><th>FIDIC 紅皮書</th><th>FIDIC 銀皮書</th><th>中鼎 PO 慣例</th></tr>${list.map(r => `<tr><td><b>${esc(r.id)} ${esc(r.name)}</b><br><span class="muted">${esc(r.group)}</span></td><td>${cell(r.pccW)}</td><td>${cell(r.pccG)}</td><td>${cell(r.red)}</td><td>${cell(r.silver)}</td><td>${cell(r.ctci)}</td></tr>`).join("")}</table>
+    <details style="margin-top:10px"><summary class="muted">資料來源</summary><ul class="muted">${[...new Set(list.flatMap(r => r.src || []))].map(u => `<li>${/^https?:/.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>` : esc(u)}</li>`).join("")}</ul></details>`;
+}
+$("#btnRefs").onclick = () => { $("#refGroup").innerHTML = `<option value="">全部群組</option>` + Ref.GROUPS.map(g => `<option>${g}</option>`).join(""); renderRefs(); $("#dlgRefs").showModal(); };
+$("#refGroup").onchange = renderRefs; $("#refQ").oninput = renderRefs;
 
 // ───────── 每月 Review ─────────
 $("#btnReview").onclick = () => { const d = new Date(); if (!$("#rMonth").value) $("#rMonth").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; $("#dlgRev").showModal(); };
